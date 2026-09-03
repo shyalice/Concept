@@ -292,8 +292,7 @@ final class CameraDevice {
         }
         self.transaction(device) { device in
             let target = device.neutralZoomFactor + zoomLevel
-            let clampedTarget = self.clampedZoomFactor(target, for: device)
-            device.ramp(toVideoZoomFactor: clampedTarget, withRate: 15.0)
+            device.videoZoomFactor = self.clampedZoomFactor(target, for: device)
         }
     }
     
@@ -303,8 +302,7 @@ final class CameraDevice {
         }
         self.transaction(device) { device in
             let target = device.videoZoomFactor * zoomDelta
-            let clampedTarget = self.clampedZoomFactor(target, for: device)
-            device.ramp(toVideoZoomFactor: clampedTarget, withRate: 15.0)
+            device.videoZoomFactor = self.clampedZoomFactor(target, for: device)
         }
     }
     
