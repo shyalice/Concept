@@ -86,14 +86,10 @@ final class CameraDeviceContext {
     }
     
     private func maxDimensions(additional: Bool, preferWide: Bool) -> CMVideoDimensions {
-        if self.isRoundVideo && self.exclusive {
-            return CMVideoDimensions(width: 3840, height: 2160)
+        if additional || preferWide {
+            return CMVideoDimensions(width: 1920, height: 1440)
         } else {
-            if additional || preferWide {
-                return CMVideoDimensions(width: 1920, height: 1440)
-            } else {
-                return CMVideoDimensions(width: 1920, height: 1080)
-            }
+            return CMVideoDimensions(width: 1920, height: 1080)
         }
     }
     

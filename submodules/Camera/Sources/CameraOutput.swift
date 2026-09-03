@@ -373,7 +373,7 @@ final class CameraOutput: NSObject {
             orientation = .landscapeRight
             
             let compressionProperties: [String: Any] = [
-                AVVideoAverageBitRateKey: 8000 * 1000,
+                AVVideoAverageBitRateKey: 4000 * 1000,
                 AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
                 AVVideoH264EntropyModeKey: AVVideoH264EntropyModeCABAC,
                 AVVideoExpectedSourceFrameRateKey: 60,

@@ -108,10 +108,10 @@ final class CameraRoundLegacyVideoFilter {
             if let resizedImage = resizeFilter.outputImage {
                 sourceImage = resizedImage
             } else {
-                sourceImage = sourceImage.transformed(by: CGAffineTransformMakeScale(scale, scale), highQualityDownsample: true)
+                sourceImage = sourceImage.transformed(by: CGAffineTransformMakeScale(scale, scale), highQualityDownsample: false)
             }
         } else {
-            sourceImage = sourceImage.transformed(by: CGAffineTransformMakeScale(scale, scale), highQualityDownsample: true)
+            sourceImage = sourceImage.transformed(by: CGAffineTransformMakeScale(scale, scale), highQualityDownsample: false)
         }
         
         if sourceIsLandscape {
