@@ -144,36 +144,60 @@ public final class PasscodeEntryController: ViewController {
             guard let strongSelf = self else {
                 return
             }
-    
-            var succeed = false
-            switch strongSelf.challengeData {
-                case .none:
-                    succeed = true
-                case let .numericalPassword(code):
-                    succeed = passcode == normalizeArabicNumeralString(code, type: .western)
-                case let .plaintextPassword(code):
-                    succeed = passcode == code
-            }
             
-            if succeed {
-                if let completed = strongSelf.completed {
-                    completed()
-                } else {
-                    strongSelf.appLockContext.unlock()
+            let _ = (strongSelf.accountManager.sharedData(keys: [SharedDataKeys.conceptSecretPasscodes])
+            |> take(1)
+            |> deliverOnMainQueue).start(next: { sharedData in
+                guard let strongSelf = self else {
+                    return
                 }
                 
-                let isMainApp = strongSelf.applicationBindings.isMainApp
-                let _ = updatePresentationPasscodeSettingsInteractively(accountManager: strongSelf.accountManager, { settings in
-                    if isMainApp {
-                        return settings.withUpdatedBiometricsDomainState(LocalAuth.evaluatedPolicyDomainState)
-                    } else {
-                        return settings.withUpdatedShareBiometricsDomainState(LocalAuth.evaluatedPolicyDomainState)
+                var succeed = false
+                switch strongSelf.challengeData {
+                    case .none:
+                        succeed = true
+                    case let .numericalPassword(code):
+                        succeed = passcode == normalizeArabicNumeralString(code, type: .western)
+                    case let .plaintextPassword(code):
+                        succeed = passcode == code
+                }
+                
+                if !succeed {
+                    let conceptSecretPasscodes = sharedData.entries[SharedDataKeys.conceptSecretPasscodes]?.get(ConceptSecretPasscodes.self) ?? ConceptSecretPasscodes.defaultSettings
+                    if conceptSecretPasscodes.secretPasscodes.contains(where: { $0.passcode == passcode }) {
+                        let _ = updateConceptSecretPasscodes(strongSelf.accountManager, { current in
+                            var current = current
+                            if let index = current.secretPasscodes.firstIndex(where: { $0.passcode == passcode }) {
+                                var secretPasscodes = current.secretPasscodes
+                                secretPasscodes[index] = secretPasscodes[index].withUpdated(active: true)
+                                current = ConceptSecretPasscodes(secretPasscodes: secretPasscodes, dbCoveringAccounts: current.dbCoveringAccounts, cacheCoveringAccounts: current.cacheCoveringAccounts)
+                            }
+                            return current
+                        }).start()
+                        succeed = true
                     }
-                }).start()
-            } else {
-                strongSelf.appLockContext.failedUnlockAttempt()
-                strongSelf.controllerNode.animateError()
-            }
+                }
+                
+                if succeed {
+                    if let completed = strongSelf.completed {
+                        completed()
+                    } else {
+                        strongSelf.appLockContext.unlock()
+                    }
+                    
+                    let isMainApp = strongSelf.applicationBindings.isMainApp
+                    let _ = updatePresentationPasscodeSettingsInteractively(accountManager: strongSelf.accountManager, { settings in
+                        if isMainApp {
+                            return settings.withUpdatedBiometricsDomainState(LocalAuth.evaluatedPolicyDomainState)
+                        } else {
+                            return settings.withUpdatedShareBiometricsDomainState(LocalAuth.evaluatedPolicyDomainState)
+                        }
+                    }).start()
+                } else {
+                    strongSelf.appLockContext.failedUnlockAttempt()
+                    strongSelf.controllerNode.animateError()
+                }
+            })
         }
         self.controllerNode.requestBiometrics = { [weak self] in
             if let strongSelf = self {
@@ -228,7 +252,7 @@ public final class PasscodeEntryController: ViewController {
         
         self.hasOngoingBiometricsRequest = true
         
-        self.biometricsDisposable.set((LocalAuth.auth(reason: self.presentationData.strings.EnterPasscode_TouchId.replacingOccurrences(of: "Telegram", with: "Swiftgram") /* MARK: Swiftgram */) |> deliverOnMainQueue).start(next: { [weak self] result, evaluatedPolicyDomainState in
+        self.biometricsDisposable.set((LocalAuth.auth(reason: self.presentationData.strings.EnterPasscode_TouchId.replacingOccurrences(of: "Telegram", with: "Concept") /* MARK: Swiftgram */) |> deliverOnMainQueue).start(next: { [weak self] result, evaluatedPolicyDomainState in
             guard let strongSelf = self else {
                 return
             }

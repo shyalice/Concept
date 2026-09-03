@@ -569,6 +569,10 @@ private func mapVisibility(_ visibility: ListViewItemNodeVisibility, boundsSize:
     }
 }
 
+private func isDeletedBubbleMessage(_ message: Message) -> Bool {
+    return message.attributes.contains(where: { $0 is DeletedMessageAttribute }) || AntiDeleteManager.shared.isMessageDeleted(peerId: message.id.peerId.toInt64(), messageId: message.id.id)
+}
+
 public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewItemNode {
     public class ContentContainer {
         public let contentMessageStableId: UInt32
@@ -5060,8 +5064,30 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
             }
             
             contentContainer?.update(size: relativeFrame.size, contentOrigin: contentOrigin, selectionInsets: selectionInsets, index: index, presentationData: item.presentationData, graphics: graphics, backgroundType: backgroundType, presentationContext: item.controllerInteraction.presentationContext, mediaBox: item.context.account.postbox.mediaBox, messageSelection: itemSelection)
+            
+            if let contentContainer = contentContainer {
+                let deletedMessageAlpha = CGFloat(AntiDeleteManager.shared.deletedMessageDisplayAlpha)
+                let containerAlpha: CGFloat = isDeletedBubbleMessage(item.message) ? deletedMessageAlpha : 1.0
+                if case .System = animation {
+                    animation.animator.updateAlpha(layer: contentContainer.sourceNode.contentNode.layer, alpha: containerAlpha, completion: nil)
+                } else {
+                    contentContainer.sourceNode.contentNode.alpha = containerAlpha
+                }
+            }
                         
             index += 1
+        }
+        
+        let mainContainerAlpha: CGFloat
+        if contentContainerNodeFrames.isEmpty, isDeletedBubbleMessage(item.message) {
+            mainContainerAlpha = CGFloat(AntiDeleteManager.shared.deletedMessageDisplayAlpha)
+        } else {
+            mainContainerAlpha = 1.0
+        }
+        if case .System = animation {
+            animation.animator.updateAlpha(layer: strongSelf.mainContextSourceNode.contentNode.layer, alpha: mainContainerAlpha, completion: nil)
+        } else {
+            strongSelf.mainContextSourceNode.contentNode.alpha = mainContainerAlpha
         }
         
         if hasSelection {

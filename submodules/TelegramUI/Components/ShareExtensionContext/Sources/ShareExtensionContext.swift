@@ -423,11 +423,20 @@ public class ShareRootControllerImpl {
                 isICloudEnabled: false
             )
             
-            let accountData: Signal<(ShareControllerEnvironment, ShareControllerAccountContext, [ShareControllerSwitchableAccount]), NoError> = accountManager.accountRecords()
+            let accountData: Signal<(ShareControllerEnvironment, ShareControllerAccountContext, [ShareControllerSwitchableAccount]), NoError> = combineLatest(
+                accountManager.accountRecords(),
+                accountManager.sharedData(keys: [SharedDataKeys.conceptSecretPasscodes])
+            )
             |> take(1)
-            |> mapToSignal { view -> Signal<(ShareControllerEnvironment, ShareControllerAccountContext, [ShareControllerSwitchableAccount]), NoError> in
+            |> mapToSignal { view, sharedData -> Signal<(ShareControllerEnvironment, ShareControllerAccountContext, [ShareControllerSwitchableAccount]), NoError> in
+                let conceptSecretPasscodes = sharedData.entries[SharedDataKeys.conceptSecretPasscodes]?.get(ConceptSecretPasscodes.self) ?? ConceptSecretPasscodes.defaultSettings
+                let inactiveAccountIds = conceptSecretPasscodes.inactiveAccountIds()
+                
                 var signals: [Signal<(AccountRecordId, AccountStateManager, EnginePeer)?, NoError>] = []
                 for record in view.records {
+                    if inactiveAccountIds.contains(record.id) {
+                        continue
+                    }
                     if record.attributes.contains(where: { attribute in
                         if case .loggedOut = attribute {
                             return true

@@ -52,7 +52,10 @@ final class ChatListIndexTable: Table {
     
     private var updatedPreviousPeerCachedIndices: [PeerId: ChatListPeerInclusionIndex] = [:]
     
-    init(valueBox: ValueBox, table: ValueBoxTable, useCaches: Bool, peerNameIndexTable: PeerNameIndexTable, metadataTable: MessageHistoryMetadataTable, readStateTable: MessageHistoryReadStateTable, notificationSettingsTable: PeerNotificationSettingsTable) {
+    private var peerIdsExcludedFromUnreadCounters: Set<PeerId> = []
+
+    init(valueBox: ValueBox, table: ValueBoxTable, useCaches: Bool, peerNameIndexTable: PeerNameIndexTable, metadataTable: MessageHistoryMetadataTable, readStateTable: MessageHistoryReadStateTable, notificationSettingsTable: PeerNotificationSettingsTable, peerIdsExcludedFromUnreadCounters: Set<PeerId> = []) {
+        self.peerIdsExcludedFromUnreadCounters = peerIdsExcludedFromUnreadCounters
         self.peerNameIndexTable = peerNameIndexTable
         self.metadataTable = metadataTable
         self.readStateTable = readStateTable
@@ -374,6 +377,7 @@ final class ChatListIndexTable: Table {
             
             var additionalAlteredPeerIds = Set<PeerId>()
             for peerId in alteredPeerIds {
+                if self.peerIdsExcludedFromUnreadCounters.contains(peerId) { continue }
                 guard let peer = postbox.peerTable.get(peerId) else {
                     continue
                 }
@@ -433,6 +437,7 @@ final class ChatListIndexTable: Table {
             let globalNotificationSettings = postbox.getGlobalNotificationSettings(transaction: currentTransaction)
             
             for peerId in alteredPeerIds {
+                if self.peerIdsExcludedFromUnreadCounters.contains(peerId) { continue }
                 guard let peer = postbox.peerTable.get(peerId) else {
                     continue
                 }
@@ -711,6 +716,7 @@ final class ChatListIndexTable: Table {
         var totalStates: [PeerGroupId: ChatListTotalUnreadState] = [:]
         var summaries: [PeerGroupId: PeerGroupUnreadCountersCombinedSummary] = [:]
         for peerId in peerIds {
+            if self.peerIdsExcludedFromUnreadCounters.contains(peerId) { continue }
             guard let peer = postbox.peerTable.get(peerId) else {
                 continue
             }
@@ -805,6 +811,7 @@ final class ChatListIndexTable: Table {
         var summary = PeerGroupUnreadCountersCombinedSummary(namespaces: [:])
         
         postbox.chatListTable.forEachPeer(groupId: groupId, { peerId in
+            if self.peerIdsExcludedFromUnreadCounters.contains(peerId) { return }
             if peerId.namespace == .max {
                 return
             }
@@ -839,5 +846,13 @@ final class ChatListIndexTable: Table {
         })
         
         return summary
+    }
+    
+    func updatePeerIdsExcludedFromUnreadCounters(_ peerIdsExcludedFromUnreadCounters: Set<PeerId>) -> Bool {
+        if self.peerIdsExcludedFromUnreadCounters != peerIdsExcludedFromUnreadCounters {
+            self.peerIdsExcludedFromUnreadCounters = peerIdsExcludedFromUnreadCounters
+            return true
+        }
+        return false
     }
 }

@@ -19,6 +19,7 @@ enum SettingsSection: Int, CaseIterable {
     case accounts
     case myProfile
     case proxy
+    case concept
     case swiftgram
     case swiftgramPro
     case apps
@@ -179,6 +180,14 @@ func settingsItems(showProfileId: Bool, data: PeerInfoScreenData?, context: Acco
             interaction.openSettings(.profile)
         }))
         
+        items[.myProfile]!.append(PeerInfoScreenDisclosureItem(id: 1, text: "Enter secret code", icon: PresentationResourcesSettings.security, action: {
+            interaction.openSettings(.enterSecretCode)
+        }))
+        
+        items[.myProfile]!.append(PeerInfoScreenDisclosureItem(id: 2, text: "Manage secret codes", icon: PresentationResourcesSettings.passkeys, action: {
+            interaction.openSettings(.manageSecretCodes)
+        }))
+        
         if !settings.proxySettings.servers.isEmpty {
             let proxyType: String
             if settings.proxySettings.enabled, let activeServer = settings.proxySettings.activeServer {
@@ -226,7 +235,10 @@ func settingsItems(showProfileId: Bool, data: PeerInfoScreenData?, context: Acco
             interaction.openSettings(.swiftgramPro)
         }))
     }
-    items[.swiftgram]!.append(PeerInfoScreenDisclosureItem(id: 1, label: swiftgramLabel, text: "Swiftgram", icon: PresentationResourcesSettings.swiftgram, action: {
+    items[.concept]!.append(PeerInfoScreenDisclosureItem(id: 1, label: swiftgramLabel, text: "Concept", icon: PresentationResourcesSettings.conceptPurple, action: {
+        interaction.openSettings(.concept)
+    }))
+    items[.swiftgram]!.append(PeerInfoScreenDisclosureItem(id: 2, label: swiftgramLabel, text: "Swiftgram", icon: PresentationResourcesSettings.swiftgram, action: {
         interaction.openSettings(.swiftgram)
     }))
 

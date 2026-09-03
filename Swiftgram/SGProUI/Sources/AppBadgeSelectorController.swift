@@ -18,6 +18,7 @@ struct AppBadge: Identifiable, Hashable {
 func getAvailableAppBadges() -> [AppBadge] {
     var appBadges: [AppBadge] = [
         .init(displayName: "Default", assetName: "Components/AppBadge"),
+        .init(displayName: "Hidden", assetName: "HiddenAppBadge"),
         .init(displayName: "Sky", assetName: "SkyAppBadge"),
         .init(displayName: "Night", assetName: "NightAppBadge"),
         .init(displayName: "Titanium", assetName: "TitaniumAppBadge"),
@@ -73,7 +74,14 @@ struct AppBadgeSettingsView: View {
     
     private func onSelectBadge(_ badge: AppBadge) {
         self.selectedBadge = badge
-        let image = UIImage(bundleImageName: selectedBadge.assetName) ?? UIImage(bundleImageName: "Components/AppBadge")
+        
+        let image: UIImage?
+        if selectedBadge.assetName == "HiddenAppBadge" {
+            image = nil
+        } else {
+            image = UIImage(bundleImageName: selectedBadge.assetName) ?? UIImage(bundleImageName: "Components/AppBadge")
+        }
+
         if self.context.sharedContext.immediateSGStatus.status > 1 {
             DispatchQueue.main.async {
                 SGSimpleSettings.shared.customAppBadge = selectedBadge.assetName

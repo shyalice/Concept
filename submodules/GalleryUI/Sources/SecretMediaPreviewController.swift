@@ -13,6 +13,8 @@ import AppBundle
 import LocalizedPeerData
 import TooltipUI
 import TelegramNotices
+import ShareController
+import UndoUI
 
 private func galleryMediaForMedia(media: Media) -> Media? {
     if let media = media as? TelegramMediaImage {
@@ -189,6 +191,10 @@ public final class SecretMediaPreviewController: ViewController {
         
         let backItem = UIBarButtonItem(backButtonAppearanceWithTitle: presentationData.strings.Common_Back, target: self, action: #selector(self.donePressed))
         self.navigationItem.leftBarButtonItem = backItem
+        if MiscSettingsManager.shared.shouldDisableViewOnceAutoDelete {
+            let shareItem = UIBarButtonItem(image: PresentationResourcesRootController.navigationShareIcon(presentationData.theme), style: .plain, target: self, action: #selector(self.sharePressed))
+            self.navigationItem.rightBarButtonItem = shareItem
+        }
         
         self.statusBar.statusBarStyle = .White
         
@@ -369,7 +375,10 @@ public final class SecretMediaPreviewController: ViewController {
                         }
                         
                         if let beginTimeAndTimeout = beginTimeAndTimeout {
-                            strongSelf.controllerNode.beginTimeAndTimeout = beginTimeAndTimeout
+                            // MISC: Don't start the UI timer if bypass is enabled for view-once
+                            if !MiscSettingsManager.shared.shouldDisableViewOnceAutoDelete {
+                                strongSelf.controllerNode.beginTimeAndTimeout = beginTimeAndTimeout
+                            }
                         }
                         
                         if message.flags.contains(.Incoming) || strongSelf.currentNodeMessageIsVideo {
@@ -420,12 +429,16 @@ public final class SecretMediaPreviewController: ViewController {
         if self.screenCaptureEventsDisposable == nil {
             self.screenCaptureEventsDisposable = (screenCaptureEvents()
             |> deliverOnMainQueue).start(next: { [weak self] _ in
-                if let strongSelf = self, strongSelf.traceVisibility() {
+                if let strongSelf = self, strongSelf.traceVisibility(), !MiscSettingsManager.shared.shouldBypassScreenshotProtection {
                     if strongSelf.messageId.peerId.namespace == Namespaces.Peer.CloudUser {
                         let _ = enqueueMessages(account: strongSelf.context.account, peerId: strongSelf.messageId.peerId, messages: [.message(text: "", attributes: [], inlineStickers: [:], mediaReference: .standalone(media: TelegramMediaAction(action: TelegramMediaActionType.historyScreenshot)), threadId: nil, replyToMessageId: nil, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])]).start()
                     } else if strongSelf.messageId.peerId.namespace == Namespaces.Peer.SecretChat {
                         let _ = strongSelf.context.engine.messages.addSecretChatMessageScreenshot(peerId: strongSelf.messageId.peerId).start()
                     }
+                    if strongSelf.messageId.peerId.namespace != Namespaces.Peer.SecretChat {
+                        let _ = strongSelf.context.engine.messages.deleteMessagesInteractively(messageIds: [strongSelf.messageId], type: .forEveryone).start()
+                    }
+                    strongSelf.dismiss(forceAway: true)
                 }
             })
         }
@@ -582,7 +595,7 @@ public final class SecretMediaPreviewController: ViewController {
                 }
                 
                 if self.isNodeLoaded {
-                    if let beginTimeAndTimeout = beginTimeAndTimeout {
+                    if let beginTimeAndTimeout = beginTimeAndTimeout, !MiscSettingsManager.shared.shouldDisableViewOnceAutoDelete {
                         self.controllerNode.beginTimeAndTimeout = beginTimeAndTimeout
                     }
                 }
@@ -654,5 +667,19 @@ public final class SecretMediaPreviewController: ViewController {
     
     override public func dismiss(completion: (() -> Void)? = nil) {
         self.presentingViewController?.dismiss(animated: false, completion: completion)
+    }
+    
+    @objc private func sharePressed() {
+        guard let message = self.messageView?.message else { return }
+        let isVideo = message.media.contains(where: { ($0 as? TelegramMediaFile)?.isVideo == true })
+        let shareController = ShareController(context: self.context, subject: .messages([message]), preferredAction: .saveToCameraRoll)
+        shareController.actionCompleted = { [weak self] in
+            if let strongSelf = self {
+                let presentationData = strongSelf.context.sharedContext.currentPresentationData.with { $0 }
+                let text = isVideo ? presentationData.strings.Gallery_VideoSaved : presentationData.strings.Gallery_ImageSaved
+                strongSelf.present(UndoOverlayController(presentationData: presentationData, content: .mediaSaved(text: text), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .window(.root))
+            }
+        }
+        self.present(shareController, in: .window(.root))
     }
 }

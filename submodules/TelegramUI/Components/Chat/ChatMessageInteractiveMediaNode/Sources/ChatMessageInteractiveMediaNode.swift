@@ -3358,12 +3358,12 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                 if imageView.layer.contents == nil {
                     imageView.layer.contents = imageView.image?.cgImage
                 }
-                setLayerDisableScreenshots(imageView.layer, true)
+                setLayerDisableScreenshots(imageView.layer, !MiscSettingsManager.shared.shouldBypassScreenshotProtection)
                 strongSelf.imageNode.view.superview?.insertSubview(imageView, aboveSubview: strongSelf.imageNode.view)
                 
                 view = self?.view.snapshotContentTree(unhide: true)
                 if let view {
-                    setLayerDisableScreenshots(view.layer, true)
+                    setLayerDisableScreenshots(view.layer, !MiscSettingsManager.shared.shouldBypassScreenshotProtection)
                 }
                 imageView.removeFromSuperview()
             } else {

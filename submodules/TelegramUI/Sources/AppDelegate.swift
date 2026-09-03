@@ -37,6 +37,7 @@ import AppBundle
 import UrlHandling
 import OpenSSLEncryptionProvider
 import AppLock
+import AppLockState
 import PresentationDataUtils
 import TelegramIntents
 import AccountUtils
@@ -547,7 +548,13 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         
         let baseAppBundleId = Bundle.main.bundleIdentifier!
         let appGroupName = "group.\(baseAppBundleId)"
-        let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
+        var maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
+        if maybeAppGroupUrl == nil {
+            if let docUrl = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+                maybeAppGroupUrl = docUrl.appendingPathComponent("tg_fallback_group")
+                try? FileManager.default.createDirectory(at: maybeAppGroupUrl!, withIntermediateDirectories: true, attributes: nil)
+            }
+        }
         
         let buildConfig = BuildConfig(baseAppBundleId: baseAppBundleId)
         self.buildConfig = buildConfig
@@ -967,11 +974,11 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         }, getAvailableAlternateIcons: {
             if #available(iOS 10.3, *) {
                 var icons = [
-                    PresentationAppIcon(name: "BlueIcon", imageName: "BlueIcon", isDefault: buildConfig.isAppStoreBuild),
-                    PresentationAppIcon(name: "New2", imageName: "New2"),
-                    PresentationAppIcon(name: "New1", imageName: "New1"),
-                    PresentationAppIcon(name: "BlackIcon", imageName: "BlackIcon"),
-                    PresentationAppIcon(name: "BlueClassicIcon", imageName: "BlueClassicIcon"),
+                    PresentationAppIcon(name: "ConceptDefault", imageName: "ConceptDefault", isDefault: buildConfig.isAppStoreBuild),
+                    PresentationAppIcon(name: "ConceptSky", imageName: "ConceptSky"),
+                    PresentationAppIcon(name: "ConceptWhite", imageName: "ConceptWhite"),
+                    PresentationAppIcon(name: "ConceptOrange", imageName: "ConceptOrange"),
+                    PresentationAppIcon(name: "ConceptPurple", imageName: "ConceptPurple"),
                     PresentationAppIcon(name: "BlackClassicIcon", imageName: "BlackClassicIcon"),
                     PresentationAppIcon(name: "BlueFilledIcon", imageName: "BlueFilledIcon"),
                     PresentationAppIcon(name: "BlackFilledIcon", imageName: "BlackFilledIcon")
@@ -987,26 +994,14 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 
                 // MARK: Swiftgram
                 icons = [
-                    PresentationAppIcon(name: "SGDefault", imageName: "SGDefault", isDefault: true),
-                    PresentationAppIcon(name: "SGBlack", imageName: "SGBlack"),
-                    PresentationAppIcon(name: "SGLegacy", imageName: "SGLegacy"),
-                    PresentationAppIcon(name: "SGInverted", imageName: "SGInverted"),
-                    PresentationAppIcon(name: "SGWhite", imageName: "SGWhite"),
-                    PresentationAppIcon(name: "SGNight", imageName: "SGNight"),
-                    PresentationAppIcon(name: "SGSky", imageName: "SGSky"),
-                    PresentationAppIcon(name: "SGTitanium", imageName: "SGTitanium"),
-                    PresentationAppIcon(isSGPro: true, name: "SGPro", imageName: "SGPro"),
-                    PresentationAppIcon(isSGPro: true, name: "SGDay", imageName: "SGDay"),
-                    PresentationAppIcon(isSGPro: true, name: "SGGold", imageName: "SGGold"),
-                    SGSimpleSettings.shared.duckyAppIconAvailable ? PresentationAppIcon(isSGPro: true, name: "SGDucky", imageName: "SGDucky") : PresentationAppIcon(name: "", imageName: ""), // Empty
-                    PresentationAppIcon(name: "SGNeon", imageName: "SGNeon"),
-                    PresentationAppIcon(name: "SGNeonBlue", imageName: "SGNeonBlue"),
-                    PresentationAppIcon(name: "SGGlass", imageName: "SGGlass"),
-                    PresentationAppIcon(name: "SGSparkling", imageName: "SGSparkling"),
+                    PresentationAppIcon(name: "ConceptDefault", imageName: "ConceptDefault", isDefault: true),
+                    PresentationAppIcon(name: "ConceptSky", imageName: "ConceptSky"),
+                    PresentationAppIcon(name: "ConceptWhite", imageName: "ConceptWhite"),
+                    PresentationAppIcon(name: "ConceptOrange", imageName: "ConceptOrange"),
+                    PresentationAppIcon(name: "ConceptPurple", imageName: "ConceptPurple"),
                 ]
 
                 if Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" {
-                    icons.append(PresentationAppIcon(name: "SGBeta", imageName: "SGBeta"))
                 }
                 
                 return icons
@@ -1114,7 +1109,24 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             }
         }
         
-        let sharedContextSignal = currentPresentationDataAndSettings(accountManager: accountManager, systemUserInterfaceStyle: systemUserInterfaceStyle)
+        let checkTimeoutInConceptSecretPasscodes: Signal<Void, NoError>
+        if let data = try? Data(contentsOf: URL(fileURLWithPath: appLockStatePath(rootPath: rootPath))), let state = try? JSONDecoder().decode(LockState.self, from: data) {
+            checkTimeoutInConceptSecretPasscodes = updateConceptSecretPasscodes(accountManager, { current in
+                return ConceptSecretPasscodes(secretPasscodes: current.secretPasscodes.map { sp in
+                    return sp.withUpdated(active: sp.active && (sp.timeout == nil || !isSecretPasscodeTimedout(timeout: sp.timeout!, state: state)))
+                }, dbCoveringAccounts: current.dbCoveringAccounts, cacheCoveringAccounts: current.cacheCoveringAccounts)
+            })
+        } else {
+            checkTimeoutInConceptSecretPasscodes = .complete()
+        }
+
+        let initialPresentationDataAndSettingsPromise = Promise<InitialPresentationDataAndSettings>()
+        let _ = checkTimeoutInConceptSecretPasscodes.start(completed: {
+            initialPresentationDataAndSettingsPromise.set(currentPresentationDataAndSettings(accountManager: accountManager, systemUserInterfaceStyle: systemUserInterfaceStyle))
+        })
+        
+        let sharedContextSignal = initialPresentationDataAndSettingsPromise.get()
+        |> take(1)
         |> map { initialPresentationDataAndSettings -> (AccountManager, InitialPresentationDataAndSettings) in
             return (accountManager, initialPresentationDataAndSettings)
         }
@@ -1135,6 +1147,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             }, navigateToChat: { accountId, peerId, messageId, alwaysKeepMessageId in
                 self.openChatWhenReady(accountId: accountId, peerId: peerId, threadId: nil, messageId: messageId, storyId: nil, alwaysKeepMessageId: alwaysKeepMessageId)
             }, displayUpgradeProgress: { progress in
+
                 if let progress = progress {
                     if self.dataImportSplash == nil {
                         self.dataImportSplash = makeLegacyDataImportSplash(theme: initialPresentationDataAndSettings.presentationData.theme, strings: initialPresentationDataAndSettings.presentationData.strings)
@@ -1151,6 +1164,15 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                     }
                 }
             }, appDelegate: self, testingEnvironment: isUITest)
+            
+            let _ = (appLockContext.isCurrentlyLocked
+            |> deliverOnMainQueue).start(next: { [weak sharedContext] isLocked in
+                if isLocked {
+                    if sharedContext?.currentConceptSettings.with({ $0.hideAllSecretsOnManualAppLock }) ?? false {
+                        sharedContext?.hideAllSecrets()
+                    }
+                }
+            })
             
             presentationDataPromise.set(sharedContext.presentationData)
             
@@ -1596,6 +1618,18 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             self.runForegroundTasks()
         }
         
+        self.mainWindow?.hostView.motionShakeImpl = { [weak self] in
+            guard let strongSelf = self else {
+                return
+            }
+            let _ = (strongSelf.sharedContextPromise.get()
+            |> take(1)).start(next: { sharedApplicationContext in
+                if sharedApplicationContext.sharedContext.currentConceptSettings.with({ $0.hideAllSecretsOnDeviceShake }) {
+                    sharedApplicationContext.sharedContext.hideAllSecrets()
+                }
+            })
+        }
+
         
         DeviceProximityManager.shared().proximityChanged = { [weak self] value in
             if let strongSelf = self {

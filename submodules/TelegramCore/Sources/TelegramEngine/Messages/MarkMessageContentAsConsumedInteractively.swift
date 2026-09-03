@@ -12,6 +12,10 @@ func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox, messa
             for i in 0 ..< updatedAttributes.count {
                 if let attribute = updatedAttributes[i] as? ConsumableContentMessageAttribute {
                     if !attribute.consumed {
+                        // MISC: Don't consume view-once if bypass enabled
+                        if message.containsSecretMedia, MiscSettingsManager.shared.shouldDisableViewOnceAutoDelete {
+                            continue
+                        }
                         updatedAttributes[i] = ConsumableContentMessageAttribute(consumed: true)
                         updateMessage = true
                         
@@ -51,6 +55,11 @@ func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox, messa
             for i in 0 ..< updatedAttributes.count {
                 if let attribute = updatedAttributes[i] as? AutoremoveTimeoutMessageAttribute {
                     if attribute.countdownBeginTime == nil || attribute.countdownBeginTime == 0 {
+                        // MISC: Don't start countdown for view-once if bypass enabled
+                        if message.containsSecretMedia && MiscSettingsManager.shared.shouldDisableViewOnceAutoDelete {
+                            continue
+                        }
+                        
                         var timeout = attribute.timeout
                         if let duration = message.secretMediaDuration {
                             timeout = max(timeout, Int32(duration))
@@ -82,6 +91,11 @@ func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox, messa
                     }
                 } else if let attribute = updatedAttributes[i] as? AutoclearTimeoutMessageAttribute {
                     if attribute.countdownBeginTime == nil || attribute.countdownBeginTime == 0 {
+                        // MISC: Don't start countdown for view-once if bypass enabled
+                        if message.containsSecretMedia && MiscSettingsManager.shared.shouldDisableViewOnceAutoDelete {
+                            continue
+                        }
+                        
                         var timeout = attribute.timeout
                         if let duration = message.secretMediaDuration, timeout != viewOnceTimeout {
                             timeout = max(timeout, Int32(duration))
@@ -207,7 +221,9 @@ func markMessageContentAsConsumedRemotely(transaction: Transaction, messageId: M
                                  
                     if message.id.peerId.namespace == Namespaces.Peer.SecretChat {
                     } else {
-                        if attribute.timeout == viewOnceTimeout || timestamp >= countdownBeginTime + attribute.timeout {
+                        // MISC: Don't expire view-once media if bypass enabled
+                        let shouldExpire = !(MiscSettingsManager.shared.shouldDisableViewOnceAutoDelete && message.containsSecretMedia)
+                        if shouldExpire && (attribute.timeout == viewOnceTimeout || timestamp >= countdownBeginTime + attribute.timeout) {
                             for i in 0 ..< updatedMedia.count {
                                 if let _ = updatedMedia[i] as? TelegramMediaImage {
                                     updatedMedia[i] = TelegramMediaExpiredContent(data: .image)
@@ -226,6 +242,11 @@ func markMessageContentAsConsumedRemotely(transaction: Transaction, messageId: M
                 }
             } else if let attribute = updatedAttributes[i] as? AutoclearTimeoutMessageAttribute {
                 if (attribute.countdownBeginTime == nil || attribute.countdownBeginTime == 0) && message.containsSecretMedia {
+                    // MISC: Don't start countdown for view-once if bypass enabled
+                    if message.containsSecretMedia && MiscSettingsManager.shared.shouldDisableViewOnceAutoDelete {
+                        continue
+                    }
+                    
                     updatedAttributes[i] = AutoclearTimeoutMessageAttribute(timeout: attribute.timeout, countdownBeginTime: countdownBeginTime)
                     updateMessage = true
                     

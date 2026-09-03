@@ -87,7 +87,7 @@ final class CameraDeviceContext {
     
     private func maxDimensions(additional: Bool, preferWide: Bool) -> CMVideoDimensions {
         if self.isRoundVideo && self.exclusive {
-            return CMVideoDimensions(width: 640, height: 480)
+            return CMVideoDimensions(width: 3840, height: 2160)
         } else {
             if additional || preferWide {
                 return CMVideoDimensions(width: 1920, height: 1440)
@@ -98,15 +98,7 @@ final class CameraDeviceContext {
     }
     
     private func preferredMaxFrameRate(useLower: Bool) -> Double {
-        if !self.exclusive || self.isRoundVideo || useLower {
-            return 30.0
-        }
-        switch DeviceModel.current {
-        case .iPhone15ProMax, .iPhone14ProMax, .iPhone13ProMax, .iPhone16ProMax, .iPhone17Pro, .iPhone17ProMax:
-            return 30.0
-        default:
-            return 30.0
-        }
+        return 60.0
     }
 }
 
@@ -279,7 +271,7 @@ private final class CameraContext {
                 self.modeChange = .position
                 
                 let preferWide = self.initialConfiguration.preferWide || isRoundVideo
-                let preferLowerFramerate = self.initialConfiguration.preferLowerFramerate || isRoundVideo
+                let preferLowerFramerate = self.initialConfiguration.preferLowerFramerate
                 
                 mainDeviceContext.configure(position: targetPosition, previewView: self.simplePreviewView, audio: self.initialConfiguration.audio, photo: self.initialConfiguration.photo, metadata: self.initialConfiguration.metadata, preferWide: preferWide, preferLowerFramerate: preferLowerFramerate, switchAudio: !isRoundVideo)
                 if isRoundVideo {
@@ -302,8 +294,8 @@ private final class CameraContext {
             self.positionValue = position
             self.modeChange = .position
             
-            let preferWide = self.initialConfiguration.preferWide || (self.positionValue == .front && self.initialConfiguration.isRoundVideo)
-            let preferLowerFramerate = self.initialConfiguration.preferLowerFramerate || self.initialConfiguration.isRoundVideo
+            let preferWide = self.initialConfiguration.preferWide || self.initialConfiguration.isRoundVideo
+            let preferLowerFramerate = self.initialConfiguration.preferLowerFramerate
             
             self.mainDeviceContext?.configure(position: position, previewView: self.simplePreviewView, audio: self.initialConfiguration.audio, photo: self.initialConfiguration.photo, metadata: self.initialConfiguration.metadata, preferWide: preferWide, preferLowerFramerate: preferLowerFramerate)
                         
@@ -380,7 +372,7 @@ private final class CameraContext {
                 self.additionalDeviceContext = nil
                 
                 let preferWide = self.initialConfiguration.preferWide || self.initialConfiguration.isRoundVideo
-                let preferLowerFramerate = self.initialConfiguration.preferLowerFramerate || self.initialConfiguration.isRoundVideo
+                let preferLowerFramerate = self.initialConfiguration.preferLowerFramerate
                 
                 self.mainDeviceContext = CameraDeviceContext(session: self.session, exclusive: true, additional: false, ciContext: self.ciContext, colorSpace: self.colorSpace, isRoundVideo: self.initialConfiguration.isRoundVideo)
                 self.mainDeviceContext?.configure(position: self.positionValue, previewView: self.simplePreviewView, audio: self.initialConfiguration.audio, photo: self.initialConfiguration.photo, metadata: self.initialConfiguration.metadata, preferWide: preferWide, preferLowerFramerate: preferLowerFramerate)

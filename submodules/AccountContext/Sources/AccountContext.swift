@@ -11,9 +11,11 @@ import AsyncDisplayKit
 import Display
 import DeviceLocationManager
 import TemporaryCachedPeerDataManager
+import TelegramCore
 import InAppPurchaseManager
 import AnimationCache
 import MultiAnimationRenderer
+import ConceptSettings
 import Photos
 import TextFormat
 
@@ -910,6 +912,8 @@ public protocol AppLockContext: AnyObject {
     var invalidAttempts: Signal<AccessChallengeAttempts?, NoError> { get }
     var autolockDeadline: Signal<Int32?, NoError> { get }
     
+    var onManualLock: (() -> Void)? { get set }
+    
     func lock()
     func unlock()
     func failedUnlockAttempt()
@@ -1406,7 +1410,17 @@ public protocol SharedAccountContext: AnyObject {
     var contactDataManager: DeviceContactDataManager? { get }
     
     var activeAccountContexts: Signal<(primary: AccountContext?, accounts: [(AccountRecordId, AccountContext, Int32)], currentAuth: UnauthorizedAccount?), NoError> { get }
+    var inactiveAccountContexts: Signal<[(AccountRecordId, AccountContext, Int32)], NoError> { get }
     var activeAccountsWithInfo: Signal<(primary: AccountRecordId?, accounts: [AccountWithInfo]), NoError> { get }
+    
+    var conceptSettings: Signal<ConceptSettings, NoError> { get }
+    var currentConceptSettings: Atomic<ConceptSettings> { get }
+    
+    var conceptSecretPasscodes: Signal<ConceptSecretPasscodes, NoError> { get }
+    var currentConceptSecretPasscodes: Atomic<ConceptSecretPasscodes> { get }
+    
+    func hideAllSecrets()
+    func activateSecretPasscode(_ passcode: ConceptSecretPasscode)
         
     var presentGlobalController: (ViewController, Any?) -> Void { get }
     var presentCrossfadeController: () -> Void { get }

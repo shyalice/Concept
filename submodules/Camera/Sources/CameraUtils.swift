@@ -26,6 +26,10 @@ extension AVCaptureDevice {
                 continue
             }
             
+            if fps >= range.maxFrameRate {
+                return (range.maxFrameRate, range.minFrameDuration)
+            }
+            
             if range.contains(rate: fps) {
                 return (fps, CMTimeMake(value: 100, timescale: Int32(100 * fps)))
             }

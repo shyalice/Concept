@@ -318,6 +318,11 @@ filegroup(
 
 # MARK: Swiftgram alternative icons
 alternate_icon_folders = [
+    "ConceptDefault",
+    "ConceptSky",
+    "ConceptWhite",
+    "ConceptOrange",
+    "ConceptPurple",
     "SGDefault",
     "SGBlack",
     "SGLegacy",
@@ -1435,9 +1440,9 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.SGActionRequestHandler</string>
     <key>CFBundleName</key>
-    <string>Swiftgram</string>
+    <string>Concept</string>
     <key>CFBundleDisplayName</key>
-    <string>Open in Swiftgram</string>
+    <string>Open in Concept</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
 	<key>NSExtension</key>
