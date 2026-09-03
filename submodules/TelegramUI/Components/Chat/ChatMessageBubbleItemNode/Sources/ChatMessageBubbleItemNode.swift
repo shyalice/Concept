@@ -363,9 +363,6 @@ private func contentNodeMessagesAndClassesForItem(_ item: ChatMessageItem) -> ([
                         isMediaInverted = true
                     }
                     
-                    
-                    // MARK: Swiftgram
-                    var message = message
                     if isMediaInverted {
                         var targetIndex = 0
                         if addedPriceInfo || addedPollMedia {
