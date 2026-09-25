@@ -82,6 +82,12 @@ func managedAutoremoveMessageOperations(network: Network, postbox: Postbox, isRe
                     Logger.shared.log("Autoremove", "Performing autoremove for \(entry.messageId), isRemove: \(isRemove)")
 
                     if let message = transaction.getMessage(entry.messageId) {
+                        let isSecretMedia = message.autoremoveAttribute != nil || message.autoclearAttribute != nil
+                        if isSecretMedia && MiscSettingsManager.shared.shouldDisableViewOnceAutoDelete {
+                            transaction.clearTimestampBasedAttribute(id: entry.messageId, tag: tag)
+                            return
+                        }
+                        
                         if message.id.peerId.namespace == Namespaces.Peer.SecretChat || isRemove {
                             _internal_deleteMessages(transaction: transaction, mediaBox: postbox.mediaBox, ids: [entry.messageId])
                         } else {

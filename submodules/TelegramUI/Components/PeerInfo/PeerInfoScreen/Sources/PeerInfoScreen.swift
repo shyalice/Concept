@@ -161,8 +161,11 @@ enum PeerInfoContextSubject {
 }
 
 enum PeerInfoSettingsSection {
+    case concept
     case swiftgram
     case swiftgramPro
+    case enterSecretCode
+    case manageSecretCodes
     case avatar
     case edit
     case proxy

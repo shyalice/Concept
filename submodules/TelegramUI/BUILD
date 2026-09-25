@@ -20,6 +20,8 @@ sgdeps = [
     "//Swiftgram/SGDebugUI:SGDebugUI",
     "//Swiftgram/SGInputToolbar:SGInputToolbar",
     "//Swiftgram/SGIAP:SGIAP",
+    "//Swiftgram/ConceptSettings:ConceptSettings",
+    "//Swiftgram/ConceptSettingsUI:ConceptSettingsUI",
     "//Swiftgram/SGPayWall:SGPayWall",
     "//Swiftgram/SGProUI:SGProUI",
     "//Swiftgram/SGKeychainBackupManager:SGKeychainBackupManager",

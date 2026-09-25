@@ -111,6 +111,7 @@ public extension Message {
     }
     
     var minAutoremoveOrClearTimeout: Int32? {
+        
         var timeout: Int32?
         for attribute in self.attributes {
             if let attribute = attribute as? AutoremoveTimeoutMessageAttribute {
@@ -137,6 +138,7 @@ public extension Message {
     }
     
     var containsSecretMedia: Bool {
+        
         guard let timeout = self.minAutoremoveOrClearTimeout else {
             return false
         }

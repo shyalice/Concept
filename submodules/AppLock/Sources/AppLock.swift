@@ -342,7 +342,10 @@ public final class AppLockContextImpl: AppLockContext {
         }
     }
     
+    public var onManualLock: (() -> Void)?
+    
     public func lock() {
+        self.onManualLock?()
         self.updateLockState { state in
             var state = state
             state.isManuallyLocked = true

@@ -4,10 +4,31 @@ import BuildConfig
 import ShareExtensionContext
 import SwiftSignalKit
 import TelegramCore
+import SGAppGroupIdentifier
 
 @objc(ShareRootController)
 class ShareRootController: UIViewController {
     private var impl: ShareRootControllerImpl?
+
+    private func displayInitializationError(_ text: String) {
+        NSLog("[Concept Share] %@", text)
+        self.view.backgroundColor = .systemBackground
+
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.numberOfLines = 0
+        label.textAlignment = .center
+        label.textColor = .label
+        label.font = .systemFont(ofSize: 15.0)
+        label.text = text
+        self.view.addSubview(label)
+
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.leadingAnchor, constant: 24.0),
+            label.trailingAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.trailingAnchor, constant: -24.0),
+            label.centerYAnchor.constraint(equalTo: self.view.centerYAnchor)
+        ])
+    }
     
     override init(nibName nibNameOrNil: String?, bundle nibBundleOrNil: Bundle?) {
         super.init(nibName: nibNameOrNil, bundle: nibBundleOrNil)
@@ -25,6 +46,7 @@ class ShareRootController: UIViewController {
         if self.impl == nil {
             let appBundleIdentifier = Bundle.main.bundleIdentifier!
             guard let lastDotRange = appBundleIdentifier.range(of: ".", options: [.backwards]) else {
+                self.displayInitializationError("Concept Share: invalid extension bundle identifier: \(appBundleIdentifier)")
                 return
             }
             
@@ -34,12 +56,15 @@ class ShareRootController: UIViewController {
             
             let languagesCategory = "ios"
             
-            let appGroupName = "group.\(baseAppBundleId)"
-            let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
+            let appGroupName = sgAppGroupIdentifier()
+            let maybeAppGroupUrl = sgAppGroupContainerURL()
             
             guard let appGroupUrl = maybeAppGroupUrl else {
+                self.displayInitializationError("Concept Share cannot access a shared App Group. Signed/profile groups: \(sgAppGroupIdentifiers().joined(separator: ", "))")
                 return
             }
+
+            NSLog("[Concept Share] Using App Group %@ at %@", appGroupName, appGroupUrl.path)
             
             let rootPath = appGroupUrl.path + "/telegram-data"
             

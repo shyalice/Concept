@@ -144,7 +144,8 @@ class HistoryNodeContainer: ASDisplayNode {
     var isSecret: Bool {
         didSet {
             if self.isSecret != oldValue {
-                setLayerDisableScreenshots(self.layer, self.isSecret)
+                let shouldDisable = self.isSecret && !MiscSettingsManager.shared.shouldBypassScreenshotProtection
+                setLayerDisableScreenshots(self.layer, shouldDisable)
             }
         }
     }
@@ -159,7 +160,8 @@ class HistoryNodeContainer: ASDisplayNode {
         super.init()
         
         if self.isSecret {
-            setLayerDisableScreenshots(self.layer, self.isSecret)
+            let shouldDisable = self.isSecret && !MiscSettingsManager.shared.shouldBypassScreenshotProtection
+            setLayerDisableScreenshots(self.layer, shouldDisable)
         }
     }
 }
@@ -1206,7 +1208,8 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
             }
         }
         
-        let isSecret = self.chatPresentationInterfaceState.copyProtectionEnabled || self.chatLocation.peerId?.namespace == Namespaces.Peer.SecretChat || self.chatLocation.peerId?.isVerificationCodes == true
+        let effectiveCopyProtection = MiscSettingsManager.shared.shouldBypassScreenshotProtection ? false : self.chatPresentationInterfaceState.copyProtectionEnabled
+        let isSecret = effectiveCopyProtection || self.chatLocation.peerId?.namespace == Namespaces.Peer.SecretChat || self.chatLocation.peerId?.isVerificationCodes == true
         if self.historyNodeContainer.isSecret != isSecret {
             #if DEBUG
             self.historyNodeContainer.isSecret = false

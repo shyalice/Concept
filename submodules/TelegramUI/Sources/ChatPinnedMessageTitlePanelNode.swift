@@ -292,7 +292,7 @@ final class ChatPinnedMessageTitlePanelNode: ChatTitleAccessoryPanelNode {
         }
         self.isReplyThread = isReplyThread
         
-        self.captureProtected = interfaceState.copyProtectionEnabled || interfaceState.myCopyProtectionEnabled
+        self.captureProtected = (interfaceState.copyProtectionEnabled || interfaceState.myCopyProtectionEnabled) && !MiscSettingsManager.shared.shouldBypassScreenshotProtection
         
         self.contextContainer.isGestureEnabled = !isReplyThread
         

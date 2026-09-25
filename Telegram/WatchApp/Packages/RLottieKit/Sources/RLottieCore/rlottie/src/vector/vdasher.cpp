@@ -103,15 +103,27 @@ void VDasher::updateActiveSegment()
 {
     mStartNewSegment = true;
 
-    if (mDiscard) {
-        mDiscard = false;
-        mIndex = (mIndex + 1) % mArraySize;
-        mCurrentLength = mDashArray[mIndex].length;
-    } else {
-        mDiscard = true;
-        mCurrentLength = mDashArray[mIndex].gap;
+    size_t iterations = 0;
+    while (iterations < mArraySize * 2) {
+        if (mDiscard) {
+            mDiscard = false;
+            mIndex = (mIndex + 1) % mArraySize;
+            mCurrentLength = mDashArray[mIndex].length;
+        } else {
+            mDiscard = true;
+            mCurrentLength = mDashArray[mIndex].gap;
+        }
+        if (!vIsZero(mCurrentLength)) {
+            if (mCurrentLength < 0.01f) mCurrentLength = 0.01f;
+            return;
+        }
+        iterations++;
     }
-    if (vIsZero(mCurrentLength)) updateActiveSegment();
+    
+    // If we looped through all dashes/gaps and all were vIsZero,
+    // just use a large gap to prevent infinite recursion and loops.
+    mDiscard = true;
+    mCurrentLength = 1000000.0f;
 }
 
 void VDasher::lineTo(const VPointF &p)

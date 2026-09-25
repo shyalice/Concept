@@ -252,7 +252,7 @@ public enum AccountResult {
     case authorized(Account)
 }
 
-public func accountWithId(accountManager: AccountManager<TelegramAccountManagerTypes>, networkArguments: NetworkInitializationArguments, id: AccountRecordId, encryptionParameters: ValueBoxEncryptionParameters, supplementary: Bool, isSupportUser: Bool, rootPath: String, beginWithTestingEnvironment: Bool, backupData: AccountBackupData?, auxiliaryMethods: AccountAuxiliaryMethods, shouldKeepAutoConnection: Bool = true) -> Signal<AccountResult, NoError> {
+public func accountWithId(accountManager: AccountManager<TelegramAccountManagerTypes>, networkArguments: NetworkInitializationArguments, id: AccountRecordId, encryptionParameters: ValueBoxEncryptionParameters, supplementary: Bool, isSupportUser: Bool, rootPath: String, beginWithTestingEnvironment: Bool, backupData: AccountBackupData?, auxiliaryMethods: AccountAuxiliaryMethods, shouldKeepAutoConnection: Bool = true, initialPeerIdsExcludedFromUnreadCounters: Set<PeerId> = []) -> Signal<AccountResult, NoError> {
     let path = "\(rootPath)/\(accountRecordIdPathName(id))"
     
     let postbox = openPostbox(

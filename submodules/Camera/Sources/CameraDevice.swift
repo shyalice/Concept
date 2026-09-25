@@ -67,9 +67,6 @@ final class CameraDevice {
             return
         }
         self.transaction(device) { device in
-            var maxWidth: Int32 = 0
-            var maxHeight: Int32 = 0
-            var hasSecondaryZoomLevels = false
             var candidates: [AVCaptureDevice.Format] = []
             var photoCandidates: [AVCaptureDevice.Format] = []
      outer: for format in device.formats {
@@ -78,58 +75,47 @@ final class CameraDevice {
                 }
                 
                 let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
-                if dimensions.width >= maxWidth && dimensions.width <= maxDimensions.width && dimensions.height >= maxHeight && dimensions.height <= maxDimensions.height {
-                    if dimensions.width > maxWidth {
-                        hasSecondaryZoomLevels = false
-                        candidates.removeAll()
-                    }
-                    let subtype = CMFormatDescriptionGetMediaSubType(format.formatDescription)
-                    if subtype == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange {
-                        for range in format.videoSupportedFrameRateRanges {
-                            if range.maxFrameRate > 60 {
-                                continue outer
-                            }
-                        }
-                        
-                        maxWidth = dimensions.width
-                        maxHeight = dimensions.height
-                        
-                        if #available(iOS 16.0, *), !format.secondaryNativeResolutionZoomFactors.isEmpty {
-                            hasSecondaryZoomLevels = true
-                            candidates.append(format)
-                            if format.isHighPhotoQualitySupported {
-                                photoCandidates.append(format)
-                            }
-                        } else if !hasSecondaryZoomLevels {
-                            candidates.append(format)
-                            if #available(iOS 15.0, *), format.isHighPhotoQualitySupported {
-                                photoCandidates.append(format)
-                            }
-                        }
+                if dimensions.width <= maxDimensions.width && dimensions.height <= maxDimensions.height {
+                    candidates.append(format)
+                    if #available(iOS 15.0, *), format.isHighPhotoQualitySupported {
+                        photoCandidates.append(format)
                     }
                 }
             }
             
             if !candidates.isEmpty {
                 var bestFormat: AVCaptureDevice.Format?
-    photoOuter: for format in photoCandidates {
-                    for range in format.videoSupportedFrameRateRanges {
-                        if range.maxFrameRate > maxFramerate {
-                            continue photoOuter
-                        }
+                
+                // 1. Try to find a format that explicitly supports the requested maxFramerate
+                for format in photoCandidates {
+                    if format.videoSupportedFrameRateRanges.contains(where: { $0.contains(rate: maxFramerate) || $0.maxFrameRate >= (maxFramerate - 1.0) }) {
                         bestFormat = format
                     }
                 }
                 if bestFormat == nil {
-             outer: for format in candidates {
-                        for range in format.videoSupportedFrameRateRanges {
-                            if range.maxFrameRate > maxFramerate {
-                                continue outer
-                            }
+                    for format in candidates {
+                        if format.videoSupportedFrameRateRanges.contains(where: { $0.contains(rate: maxFramerate) || $0.maxFrameRate >= (maxFramerate - 1.0) }) {
                             bestFormat = format
                         }
                     }
                 }
+                
+                // 2. Fallback to any lower framerate format
+                if bestFormat == nil {
+                    for format in photoCandidates {
+                        if format.videoSupportedFrameRateRanges.contains(where: { $0.maxFrameRate <= maxFramerate }) {
+                            bestFormat = format
+                        }
+                    }
+                }
+                if bestFormat == nil {
+                    for format in candidates {
+                        if format.videoSupportedFrameRateRanges.contains(where: { $0.maxFrameRate <= maxFramerate }) {
+                            bestFormat = format
+                        }
+                    }
+                }
+                
                 if bestFormat == nil {
                     bestFormat = candidates.last
                 }
@@ -154,7 +140,7 @@ final class CameraDevice {
             }
             
             if device.isLowLightBoostSupported {
-                device.automaticallyEnablesLowLightBoostWhenAvailable = true
+                device.automaticallyEnablesLowLightBoostWhenAvailable = (maxFramerate <= 30.0)
             }
                         
             if device.isExposureModeSupported(.continuousAutoExposure) {

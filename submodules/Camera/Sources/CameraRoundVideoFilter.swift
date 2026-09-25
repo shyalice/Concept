@@ -22,11 +22,10 @@ func allocateOutputBufferPool(with inputFormatDescription: CMFormatDescription, 
             return (nil, nil, nil)
         }
         
-        let inputDimensions = CMVideoFormatDescriptionGetDimensions(inputFormatDescription)
         var pixelBufferAttributes: [String: Any] = [
             kCVPixelBufferPixelFormatTypeKey as String: UInt(inputMediaSubType),
-            kCVPixelBufferWidthKey as String: Int(inputDimensions.width),
-            kCVPixelBufferHeightKey as String: Int(inputDimensions.height),
+            kCVPixelBufferWidthKey as String: Int(videoMessageDimensions.width),
+            kCVPixelBufferHeightKey as String: Int(videoMessageDimensions.height),
             kCVPixelBufferIOSurfacePropertiesKey as String: [:] as NSDictionary
         ]
         

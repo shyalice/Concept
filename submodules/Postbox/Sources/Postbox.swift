@@ -43,6 +43,15 @@ public final class Transaction {
         self.postbox?.keychainTable.set(key, value: value)
     }
     
+    public func updatePeerIdsExcludedFromUnreadCounters(_ peerIdsExcludedFromUnreadCounters: Set<PeerId>) {
+        assert(!self.disposed)
+        if let postbox = self.postbox {
+            if postbox.chatListIndexTable.updatePeerIdsExcludedFromUnreadCounters(peerIdsExcludedFromUnreadCounters) {
+                postbox.reindexUnreadCounters(currentTransaction: self)
+            }
+        }
+    }
+    
     public func addMessages(_ messages: [StoreMessage], location: AddMessagesLocation) -> [Int64: MessageId] {
         assert(!self.disposed)
         if let postbox = self.postbox {
@@ -1446,7 +1455,7 @@ func debugRestoreState(basePath: String, name: String) {
     }
 }
 
-public func openPostbox(basePath: String, seedConfiguration: SeedConfiguration, encryptionParameters: ValueBoxEncryptionParameters, timestampForAbsoluteTimeBasedOperations: Int32, isMainProcess: Bool, isTemporary: Bool, isReadOnly: Bool, useCopy: Bool, useCaches: Bool, removeDatabaseOnError: Bool) -> Signal<PostboxResult, NoError> {
+public func openPostbox(basePath: String, seedConfiguration: SeedConfiguration, encryptionParameters: ValueBoxEncryptionParameters, timestampForAbsoluteTimeBasedOperations: Int32, isMainProcess: Bool, isTemporary: Bool, isReadOnly: Bool, useCopy: Bool, useCaches: Bool, removeDatabaseOnError: Bool, initialPeerIdsExcludedFromUnreadCounters: Set<PeerId> = []) -> Signal<PostboxResult, NoError> {
     let queue = Postbox.sharedQueue
     return Signal { subscriber in
         queue.async {
@@ -1574,7 +1583,7 @@ public func openPostbox(basePath: String, seedConfiguration: SeedConfiguration, 
                 let endTime = CFAbsoluteTimeGetCurrent()
                 postboxLog("Postbox load took \((endTime - startTime) * 1000.0) ms")
                 
-                subscriber.putNext(.postbox(Postbox(queue: queue, basePath: basePath, seedConfiguration: seedConfiguration, valueBox: valueBox, timestampForAbsoluteTimeBasedOperations: timestampForAbsoluteTimeBasedOperations, isMainProcess: isMainProcess, isTemporary: isTemporary, tempDir: tempDir, useCaches: useCaches)))
+                subscriber.putNext(.postbox(Postbox(queue: queue, basePath: basePath, seedConfiguration: seedConfiguration, valueBox: valueBox, timestampForAbsoluteTimeBasedOperations: timestampForAbsoluteTimeBasedOperations, isMainProcess: isMainProcess, isTemporary: isTemporary, tempDir: tempDir, useCaches: useCaches, initialPeerIdsExcludedFromUnreadCounters: initialPeerIdsExcludedFromUnreadCounters)))
 
                 postboxLog("openPostbox, putCompletion")
 
@@ -1864,7 +1873,7 @@ final class PostboxImpl {
     var installedMessageActionsByPeerId: [PeerId: Bag<([StoreMessage], Transaction) -> Void>] = [:]
     var installedStoreOrUpdateMessageActionsByPeerId: [PeerId: Bag<StoreOrUpdateMessageAction>] = [:]
     
-    init(queue: Queue, basePath: String, seedConfiguration: SeedConfiguration, valueBox: SqliteValueBox, timestampForAbsoluteTimeBasedOperations: Int32, isTemporary: Bool, tempDir: TempBoxDirectory?, useCaches: Bool, isInTransaction: Atomic<Bool>) {
+    init(queue: Queue, basePath: String, seedConfiguration: SeedConfiguration, valueBox: SqliteValueBox, timestampForAbsoluteTimeBasedOperations: Int32, isTemporary: Bool, tempDir: TempBoxDirectory?, useCaches: Bool, isInTransaction: Atomic<Bool>, initialPeerIdsExcludedFromUnreadCounters: Set<PeerId> = []) {
         assert(queue.isCurrent())
         
         let startTime = CFAbsoluteTimeGetCurrent()
@@ -1938,7 +1947,7 @@ final class PostboxImpl {
         self.peerChatThreadInterfaceStateTable = PeerChatThreadInterfaceStateTable(valueBox: self.valueBox, table: PeerChatThreadInterfaceStateTable.tableSpec(68), useCaches: useCaches)
         self.itemCacheMetaTable = ItemCacheMetaTable(valueBox: self.valueBox, table: ItemCacheMetaTable.tableSpec(24), useCaches: useCaches)
         self.itemCacheTable = ItemCacheTable(valueBox: self.valueBox, table: ItemCacheTable.tableSpec(25), useCaches: useCaches)
-        self.chatListIndexTable = ChatListIndexTable(valueBox: self.valueBox, table: ChatListIndexTable.tableSpec(8), useCaches: useCaches, peerNameIndexTable: self.peerNameIndexTable, metadataTable: self.messageHistoryMetadataTable, readStateTable: self.readStateTable, notificationSettingsTable: self.peerNotificationSettingsTable)
+        self.chatListIndexTable = ChatListIndexTable(valueBox: self.valueBox, table: ChatListIndexTable.tableSpec(8), useCaches: useCaches, peerNameIndexTable: self.peerNameIndexTable, metadataTable: self.messageHistoryMetadataTable, readStateTable: self.readStateTable, notificationSettingsTable: self.peerNotificationSettingsTable, peerIdsExcludedFromUnreadCounters: initialPeerIdsExcludedFromUnreadCounters)
         self.chatListTable = ChatListTable(valueBox: self.valueBox, table: ChatListTable.tableSpec(9), useCaches: useCaches, indexTable: self.chatListIndexTable, metadataTable: self.messageHistoryMetadataTable, seedConfiguration: self.seedConfiguration)
         self.peerChatTopTaggedMessageIdsTable = PeerChatTopTaggedMessageIdsTable(valueBox: self.valueBox, table: PeerChatTopTaggedMessageIdsTable.tableSpec(28), useCaches: useCaches)
         self.peerOperationLogMetadataTable = PeerOperationLogMetadataTable(valueBox: self.valueBox, table: PeerOperationLogMetadataTable.tableSpec(29), useCaches: useCaches)
@@ -4638,7 +4647,8 @@ public class Postbox {
         isMainProcess: Bool,
         isTemporary: Bool,
         tempDir: TempBoxDirectory?,
-        useCaches: Bool
+        useCaches: Bool,
+        initialPeerIdsExcludedFromUnreadCounters: Set<PeerId> = []
     ) {
         self.queue = queue
 
@@ -4659,7 +4669,8 @@ public class Postbox {
                 isTemporary: isTemporary,
                 tempDir: tempDir,
                 useCaches: useCaches,
-                isInTransaction: isInTransaction
+                isInTransaction: isInTransaction,
+                initialPeerIdsExcludedFromUnreadCounters: initialPeerIdsExcludedFromUnreadCounters
             )
             return impl
         })
@@ -4691,6 +4702,12 @@ public class Postbox {
                 })
             })
         }
+    }
+
+    public func updatePeerIdsExcludedFromUnreadCounters(_ peerIdsExcludedFromUnreadCounters: Set<PeerId>) {
+        let _ = self.transaction({ transaction -> Void in
+            transaction.updatePeerIdsExcludedFromUnreadCounters(peerIdsExcludedFromUnreadCounters)
+        }).start()
     }
 
     public func transactionSignal<T, E>(userInteractive: Bool = false, _ f: @escaping(Subscriber<T, E>, Transaction) -> Disposable) -> Signal<T, E> {

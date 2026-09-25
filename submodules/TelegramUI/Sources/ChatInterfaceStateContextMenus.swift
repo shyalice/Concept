@@ -681,7 +681,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                         }
                     }
                     
-                    if let restrictedText = restrictedText {
+                    if let restrictedText = restrictedText, !restrictedText.isEmpty {
                         storeMessageTextInPasteboard(restrictedText, entities: nil)
                     } else {
                         var translateToLang: String?
@@ -1385,7 +1385,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                                         }
                                     }
                                     
-                                    if let restrictedText = restrictedText {
+                                    if let restrictedText = restrictedText, !restrictedText.isEmpty {
                                         storeMessageTextInPasteboard(restrictedText, entities: nil)
                                     } else {
                                         var translateToLang: String?
@@ -2557,7 +2557,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                             }
                         }
                         
-                        if let restrictedText = restrictedText {
+                        if let restrictedText = restrictedText, !restrictedText.isEmpty {
                             storeMessageTextInPasteboard(restrictedText, entities: nil)
                         } else {
                             var translateToLang: String?

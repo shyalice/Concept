@@ -227,6 +227,11 @@ private func validatePeerReadState(network: Network, postbox: Postbox, stateMana
 }
 
 private func pushPeerReadState(network: Network, postbox: Postbox, stateManager: AccountStateManager, peerId: PeerId, readState: PeerReadState) -> Signal<PeerReadState, PeerReadStateValidationError> {
+    // GHOST MODE: Keep local read state but skip server read receipts.
+    if peerId.namespace != Namespaces.Peer.SecretChat && GhostModeManager.shared.shouldHideReadReceipts {
+        return .single(readState)
+    }
+    
     if peerId.namespace == Namespaces.Peer.SecretChat {
         return inputSecretChat(postbox: postbox, peerId: peerId)
         |> mapToSignal { inputPeer -> Signal<PeerReadState, PeerReadStateValidationError> in

@@ -318,7 +318,7 @@ public func currentAccount(allocateIfNotExists: Bool, networkArguments: NetworkI
                         return false
                     }
                 })
-                return accountWithId(accountManager: manager, networkArguments: networkArguments, id: record.0, encryptionParameters: encryptionParameters, supplementary: supplementary, isSupportUser: isSupportUser, rootPath: rootPath, beginWithTestingEnvironment: beginWithTestingEnvironment, backupData: nil, auxiliaryMethods: auxiliaryMethods)
+                return accountWithId(accountManager: manager, networkArguments: networkArguments, id: record.0, encryptionParameters: encryptionParameters, supplementary: supplementary, isSupportUser: isSupportUser, rootPath: rootPath, beginWithTestingEnvironment: beginWithTestingEnvironment, backupData: nil, auxiliaryMethods: auxiliaryMethods, initialPeerIdsExcludedFromUnreadCounters: [])
                 |> mapToSignal { accountResult -> Signal<AccountResult?, NoError> in
                     let postbox: Postbox
                     let initialKind: AccountKind
@@ -495,7 +495,7 @@ private func cleanupAccount(networkArguments: NetworkInitializationArguments, ac
             return false
         }
     })
-    return accountWithId(accountManager: accountManager, networkArguments: networkArguments, id: id, encryptionParameters: encryptionParameters, supplementary: true, isSupportUser: isSupportUser, rootPath: rootPath, beginWithTestingEnvironment: beginWithTestingEnvironment, backupData: nil, auxiliaryMethods: auxiliaryMethods)
+    return accountWithId(accountManager: accountManager, networkArguments: networkArguments, id: id, encryptionParameters: encryptionParameters, supplementary: true, isSupportUser: isSupportUser, rootPath: rootPath, beginWithTestingEnvironment: beginWithTestingEnvironment, backupData: nil, auxiliaryMethods: auxiliaryMethods, initialPeerIdsExcludedFromUnreadCounters: [])
     |> mapToSignal { account -> Signal<Void, NoError> in
         switch account {
             case .upgrading:

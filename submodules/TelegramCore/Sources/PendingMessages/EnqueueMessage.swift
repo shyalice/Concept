@@ -1126,6 +1126,12 @@ func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId,
                             }
                         }
                         
+                        let isRestrictedOrScam = sourceMessage.isScam || sourceMessage.isCopyProtectedIgnoringBypass()
+                        let forceAsCopy = isRestrictedOrScam
+                        if forceAsCopy {
+                            hideSendersNames = true
+                        }
+                        
                         if hideCaptions {
                             for media in sourceMessage.media {
                                 if media is TelegramMediaImage || media is TelegramMediaFile {
@@ -1135,7 +1141,7 @@ func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId,
                             }
                         }
                         
-                        if sourceMessage.id.namespace == Namespaces.Message.Cloud && peerId.namespace != Namespaces.Peer.SecretChat {
+                        if sourceMessage.id.namespace == Namespaces.Message.Cloud && peerId.namespace != Namespaces.Peer.SecretChat && !forceAsCopy {
                             attributes.append(ForwardSourceInfoAttribute(messageId: sourceMessage.id))
                         
                             if peerId == account.peerId {

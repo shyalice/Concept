@@ -48,6 +48,8 @@ final class PasscodeSetupControllerNode: ASDisplayNode {
     
     var selectPasscodeMode: (() -> Void)?
     var checkPasscode: ((String) -> Bool)?
+    var validatePasscode: ((String) -> String?)?
+    
     var complete: ((String, Bool) -> Void)?
     var updateNextAction: ((Bool) -> Void)?
     
@@ -81,6 +83,10 @@ final class PasscodeSetupControllerNode: ASDisplayNode {
                 }
             case .setup:
                 passcodeType = .digits6
+            case let .secretSetup(type):
+                passcodeType = type
+            case let .secretEntry(_, type):
+                passcodeType = type
         }
         
         self.inputFieldNode = PasscodeInputFieldNode(color: self.presentationData.theme.list.itemPrimaryTextColor, accentColor: self.presentationData.theme.list.itemAccentColor, fieldType: passcodeType, keyboardAppearance: self.presentationData.theme.rootController.keyboardColor.keyboardAppearance)
@@ -113,13 +119,17 @@ final class PasscodeSetupControllerNode: ASDisplayNode {
             case .entry:
                 self.modeButtonNode.isHidden = true
                 self.modeButtonNode.isAccessibilityElement = false
-                text = self.presentationData.strings.EnterPasscode_EnterPasscode.replacingOccurrences(of: "Telegram", with: "Swiftgram") /* MARK: Swiftgram */
+                text = self.presentationData.strings.EnterPasscode_EnterPasscode.replacingOccurrences(of: "Telegram", with: "Concept") /* MARK: Swiftgram */
             case let .setup(change, _):
                 if change {
                     text = self.presentationData.strings.EnterPasscode_EnterNewPasscodeChange
                 } else {
                     text = self.presentationData.strings.EnterPasscode_EnterNewPasscodeNew
                 }
+            case .secretSetup:
+                text = self.presentationData.strings.EnterPasscode_EnterNewPasscodeChange
+            case .secretEntry:
+                text = self.presentationData.strings.EnterPasscode_EnterPasscode
         }
         self.titleNode.attributedText = NSAttributedString(string: text, font: Font.regular(17.0), textColor: self.presentationData.theme.list.itemPrimaryTextColor)
         
@@ -169,7 +179,16 @@ final class PasscodeSetupControllerNode: ASDisplayNode {
         self.mode = mode
         self.inputFieldNode.reset()
         
-        if case let .setup(_, type) = mode {
+        let type: PasscodeEntryFieldType?
+        var isSetup = false
+        switch mode {
+        case let .setup(_, t): type = t; isSetup = true
+        case let .secretSetup(t): type = t; isSetup = true
+        case let .secretEntry(_, t): type = t
+        case .entry: type = nil
+        }
+        
+        if let type = type {
             self.inputFieldNode.updateFieldType(type, animated: true)
             
             let fieldBackgroundAlpha: CGFloat
@@ -183,7 +202,10 @@ final class PasscodeSetupControllerNode: ASDisplayNode {
             let previousAlpha = self.inputFieldBackgroundNode.alpha
             self.inputFieldBackgroundNode.alpha = fieldBackgroundAlpha
             self.inputFieldBackgroundNode.layer.animateAlpha(from: previousAlpha, to: fieldBackgroundAlpha, duration: 0.25)
-            self.subtitleNode.isHidden = true
+            
+            if isSetup {
+                self.subtitleNode.isHidden = true
+            }
         }
     }
     
@@ -194,19 +216,22 @@ final class PasscodeSetupControllerNode: ASDisplayNode {
         }
         
         switch self.mode {
-            case .entry:
+            case .entry, .secretEntry:
                 if !(self.checkPasscode?(self.currentPasscode) ?? false) {
                     self.animateError()
                 }
-            case .setup:
+            case .setup, .secretSetup:
                 if let previousPasscode = self.previousPasscode {
                     if self.currentPasscode == previousPasscode {
-                        var numerical = false
-                        if case let .setup(_, type) = mode {
-                            if case .alphanumeric = type {
-                            } else {
-                                numerical = true
-                            }
+                        var numerical = true
+                        let currentType: PasscodeEntryFieldType?
+                        switch mode {
+                        case let .setup(_, type): currentType = type
+                        case let .secretSetup(type): currentType = type
+                        default: currentType = nil
+                        }
+                        if let currentType = currentType, case .alphanumeric = currentType {
+                            numerical = false
                         }
                         self.complete?(self.currentPasscode, numerical)
                     } else {
@@ -221,13 +246,23 @@ final class PasscodeSetupControllerNode: ASDisplayNode {
                             self.wrapperNode.layer.animatePosition(from: CGPoint(x: -self.wrapperNode.bounds.width, y: 0.0), to: CGPoint(), duration: 0.25, additive: true)
                             
                             self.inputFieldNode.reset(animated: false)
-                            self.titleNode.attributedText = NSAttributedString(string: self.presentationData.strings.EnterPasscode_EnterNewPasscodeChange, font: Font.regular(16.0), textColor: self.presentationData.theme.list.itemPrimaryTextColor)
-                            self.subtitleNode.isHidden = false
-                            self.subtitleNode.attributedText = NSAttributedString(string: self.presentationData.strings.PasscodeSettings_DoNotMatch, font: Font.regular(16.0), textColor: self.presentationData.theme.list.itemPrimaryTextColor)
-                            self.modeButtonNode.isHidden = false
-                            self.modeButtonNode.isAccessibilityElement = true
-                            
-                            UIAccessibility.post(notification: UIAccessibility.Notification.announcement, argument: self.presentationData.strings.PasscodeSettings_DoNotMatch)
+                            var isAnySetup = false
+                            var isSecretSetup = false
+                            if case .setup = self.mode { isAnySetup = true }
+                            if case .secretSetup = self.mode { isAnySetup = true; isSecretSetup = true }
+
+                            if isAnySetup {
+                                self.titleNode.attributedText = NSAttributedString(string: self.presentationData.strings.EnterPasscode_EnterNewPasscodeChange, font: Font.regular(16.0), textColor: self.presentationData.theme.list.itemPrimaryTextColor)
+                                self.subtitleNode.isHidden = false
+                                
+                                let failureReason = isSecretSetup ? (self.validatePasscode?(self.currentPasscode) ?? self.presentationData.strings.PasscodeSettings_DoNotMatch) : self.presentationData.strings.PasscodeSettings_DoNotMatch
+                                
+                                self.subtitleNode.attributedText = NSAttributedString(string: failureReason, font: Font.regular(16.0), textColor: self.presentationData.theme.list.itemPrimaryTextColor)
+                                self.modeButtonNode.isHidden = false
+                                self.modeButtonNode.isAccessibilityElement = true
+                                
+                                UIAccessibility.post(notification: UIAccessibility.Notification.announcement, argument: failureReason)
+                            }
                             
                             if let validLayout = self.validLayout {
                                 self.containerLayoutUpdated(validLayout.0, navigationBarHeight: validLayout.1, transition: .immediate)
@@ -246,12 +281,21 @@ final class PasscodeSetupControllerNode: ASDisplayNode {
                         self.wrapperNode.layer.animatePosition(from: CGPoint(x: self.wrapperNode.bounds.width, y: 0.0), to: CGPoint(), duration: 0.25, additive: true)
                         
                         self.inputFieldNode.reset(animated: false)
-                        self.titleNode.attributedText = NSAttributedString(string: self.presentationData.strings.EnterPasscode_RepeatNewPasscode, font: Font.regular(16.0), textColor: self.presentationData.theme.list.itemPrimaryTextColor)
-                        self.subtitleNode.isHidden = true
-                        self.modeButtonNode.isHidden = true
-                        self.modeButtonNode.isAccessibilityElement = false
-                        
-                        UIAccessibility.post(notification: UIAccessibility.Notification.announcement, argument: self.presentationData.strings.EnterPasscode_RepeatNewPasscode)
+                        if case .setup = self.mode {
+                            self.titleNode.attributedText = NSAttributedString(string: self.presentationData.strings.EnterPasscode_RepeatNewPasscode, font: Font.regular(16.0), textColor: self.presentationData.theme.list.itemPrimaryTextColor)
+                            self.subtitleNode.isHidden = true
+                            self.modeButtonNode.isHidden = true
+                            self.modeButtonNode.isAccessibilityElement = false
+                            
+                            UIAccessibility.post(notification: UIAccessibility.Notification.announcement, argument: self.presentationData.strings.EnterPasscode_RepeatNewPasscode)
+                        } else if case .secretSetup = self.mode {
+                            self.titleNode.attributedText = NSAttributedString(string: self.presentationData.strings.EnterPasscode_RepeatNewPasscode, font: Font.regular(16.0), textColor: self.presentationData.theme.list.itemPrimaryTextColor)
+                            self.subtitleNode.isHidden = true
+                            self.modeButtonNode.isHidden = true
+                            self.modeButtonNode.isAccessibilityElement = false
+                            
+                            UIAccessibility.post(notification: UIAccessibility.Notification.announcement, argument: self.presentationData.strings.EnterPasscode_RepeatNewPasscode)
+                        }
                         
                         if let validLayout = self.validLayout {
                             self.containerLayoutUpdated(validLayout.0, navigationBarHeight: validLayout.1, transition: .immediate)

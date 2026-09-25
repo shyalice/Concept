@@ -1,4 +1,49 @@
 <dict>
+    <key>ConceptDefault</key>
+    <dict>
+        <key>CFBundleIconFiles</key>
+        <array>
+            <string>ConceptDefault</string>
+        </array>
+        <key>UIPrerenderedIcon</key>
+        <true/>
+    </dict>
+    <key>ConceptSky</key>
+    <dict>
+        <key>CFBundleIconFiles</key>
+        <array>
+            <string>ConceptSky</string>
+        </array>
+        <key>UIPrerenderedIcon</key>
+        <true/>
+    </dict>
+    <key>ConceptWhite</key>
+    <dict>
+        <key>CFBundleIconFiles</key>
+        <array>
+            <string>ConceptWhite</string>
+        </array>
+        <key>UIPrerenderedIcon</key>
+        <true/>
+    </dict>
+    <key>ConceptOrange</key>
+    <dict>
+        <key>CFBundleIconFiles</key>
+        <array>
+            <string>ConceptOrange</string>
+        </array>
+        <key>UIPrerenderedIcon</key>
+        <true/>
+    </dict>
+    <key>ConceptPurple</key>
+    <dict>
+        <key>CFBundleIconFiles</key>
+        <array>
+            <string>ConceptPurple</string>
+        </array>
+        <key>UIPrerenderedIcon</key>
+        <true/>
+    </dict>
     <key>Black</key>
     <dict>
         <key>CFBundleIconFiles</key>

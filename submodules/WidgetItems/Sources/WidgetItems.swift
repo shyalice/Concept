@@ -1,4 +1,5 @@
 import Foundation
+import SGAppGroupIdentifier
 
 public enum WidgetCodingError: Error {
     case generic
@@ -353,14 +354,7 @@ public struct WidgetPresentationData: Codable, Equatable {
     }
     
     public static func getForExtension() -> WidgetPresentationData {
-        let appBundleIdentifier = Bundle.main.bundleIdentifier!
-        guard let lastDotRange = appBundleIdentifier.range(of: ".", options: [.backwards]) else {
-            return WidgetPresentationData.default
-        }
-        let baseAppBundleId = String(appBundleIdentifier[..<lastDotRange.lowerBound])
-        
-        let appGroupName = "group.\(baseAppBundleId)"
-        let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
+        let maybeAppGroupUrl = sgAppGroupContainerURL()
         
         guard let appGroupUrl = maybeAppGroupUrl else {
             return WidgetPresentationData.default

@@ -2034,7 +2034,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                             autoFetchFullSizeThumbnail: true,
                                             continuePlayingWithoutSoundOnLostAudioSession: isInlinePlayableVideo,
                                             placeholderColor: emptyColor,
-                                            captureProtected: associatedData.isCopyProtectionEnabled || message.isCopyProtected() || isExtendedMedia,
+                                            captureProtected: (associatedData.isCopyProtectionEnabled || message.isCopyProtected() || isExtendedMedia) && !MiscSettingsManager.shared.shouldBypassScreenshotProtection,
                                             storeAfterDownload: { [weak context] in
                                                 guard let context, let peerId else {
                                                     return
@@ -2336,7 +2336,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                             }
                             
                             if let updateImageSignal = updateImageSignal {
-                                strongSelf.imageNode.captureProtected = associatedData.isCopyProtectionEnabled || message.isCopyProtected() || isExtendedMedia
+                                strongSelf.imageNode.captureProtected = (associatedData.isCopyProtectionEnabled || message.isCopyProtected() || isExtendedMedia) && !MiscSettingsManager.shared.shouldBypassScreenshotProtection
                                 strongSelf.imageNode.setSignal(updateImageSignal(synchronousLoads, false), attemptSynchronously: synchronousLoads)
 
                                 var imageDimensions: CGSize?
@@ -3358,12 +3358,12 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                 if imageView.layer.contents == nil {
                     imageView.layer.contents = imageView.image?.cgImage
                 }
-                setLayerDisableScreenshots(imageView.layer, true)
+                setLayerDisableScreenshots(imageView.layer, !MiscSettingsManager.shared.shouldBypassScreenshotProtection)
                 strongSelf.imageNode.view.superview?.insertSubview(imageView, aboveSubview: strongSelf.imageNode.view)
                 
                 view = self?.view.snapshotContentTree(unhide: true)
                 if let view {
-                    setLayerDisableScreenshots(view.layer, true)
+                    setLayerDisableScreenshots(view.layer, !MiscSettingsManager.shared.shouldBypassScreenshotProtection)
                 }
                 imageView.removeFromSuperview()
             } else {

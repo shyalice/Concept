@@ -4440,18 +4440,170 @@ func replayFinalState(
                     }
                 }
             case let .DeleteMessagesWithGlobalIds(ids):
-                var resourceIds: [MediaResourceId] = []
-                transaction.deleteMessagesWithGlobalIds(ids, forEachMedia: { media in
-                    addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
-                })
-                if !resourceIds.isEmpty {
-                    let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
+                if AntiDeleteManager.shared.isEnabled {
+                    let messageIds = transaction.messageIdsForGlobalIds(ids)
+                    for (index, messageId) in messageIds.enumerated() {
+                        guard messageId.namespace == Namespaces.Message.Cloud else {
+                            continue
+                        }
+                        
+                        if let message = transaction.getMessage(messageId) {
+                            let globalId = index < ids.count ? ids[index] : 0
+                            let textContent = message.text
+                            
+                            var mediaDesc: String?
+                            for media in message.media {
+                                switch media {
+                                case let image as TelegramMediaImage:
+                                    mediaDesc = "Photo"
+                                    if let largest = image.representations.last {
+                                        mediaDesc = "Photo \(largest.dimensions.width)x\(largest.dimensions.height)"
+                                    }
+                                case let file as TelegramMediaFile:
+                                    if file.isVideo {
+                                        mediaDesc = "Video"
+                                    } else if file.isVoice {
+                                        mediaDesc = "Voice"
+                                    } else if file.isInstantVideo {
+                                        mediaDesc = "Video Message"
+                                    } else if file.isSticker {
+                                        mediaDesc = "Sticker"
+                                    } else {
+                                        mediaDesc = file.fileName ?? "File"
+                                    }
+                                case is TelegramMediaContact:
+                                    mediaDesc = "Contact"
+                                case is TelegramMediaMap:
+                                    mediaDesc = "Location"
+                                case let poll as TelegramMediaPoll:
+                                    mediaDesc = "Poll: \(poll.text)"
+                                default:
+                                    break
+                                }
+                            }
+                            
+                            AntiDeleteManager.shared.archiveMessage(
+                                globalId: globalId,
+                                peerId: messageId.peerId.toInt64(),
+                                messageId: messageId.id,
+                                timestamp: message.timestamp,
+                                authorId: message.author?.id.toInt64(),
+                                text: textContent,
+                                forwardAuthorId: message.forwardInfo?.author?.id.toInt64(),
+                                mediaDescription: mediaDesc
+                            )
+                        }
+                    }
+                    
+                    for messageId in messageIds {
+                        guard messageId.namespace == Namespaces.Message.Cloud else {
+                            continue
+                        }
+                        
+                        AntiDeleteManager.shared.markAsDeleted(peerId: messageId.peerId.toInt64(), messageId: messageId.id)
+                        
+                        transaction.updateMessage(messageId, update: { currentMessage in
+                            var attributes = currentMessage.attributes
+                            if !attributes.contains(where: { $0 is DeletedMessageAttribute }) {
+                                attributes.append(DeletedMessageAttribute(deletedAt: Int32(Date().timeIntervalSince1970)))
+                            }
+                            let storeForwardInfo = currentMessage.forwardInfo.flatMap(StoreMessageForwardInfo.init)
+                            return .update(StoreMessage(id: currentMessage.id, customStableId: nil, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, threadId: currentMessage.threadId, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: currentMessage.tags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: storeForwardInfo, authorId: currentMessage.author?.id, text: currentMessage.text, attributes: attributes, media: currentMessage.media))
+                        })
+                    }
+                } else {
+                    var resourceIds: [MediaResourceId] = []
+                    transaction.deleteMessagesWithGlobalIds(ids, forEachMedia: { media in
+                        addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
+                    })
+                    if !resourceIds.isEmpty {
+                        let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
+                    }
                 }
                 deletedMessageIds.append(contentsOf: ids.map { .global($0) })
             case let .DeleteMessages(ids):
-                _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: ids, manualAddMessageThreadStatsDifference: { id, add, remove in
-                    addMessageThreadStatsDifference(threadKey: id, remove: remove, addedMessagePeer: nil, addedMessageId: nil, isOutgoing: false)
-                })
+                if AntiDeleteManager.shared.isEnabled {
+                    for messageId in ids {
+                        guard messageId.namespace == Namespaces.Message.Cloud else {
+                            continue
+                        }
+                        
+                        if let message = transaction.getMessage(messageId) {
+                            let textContent = message.text
+                            
+                            var mediaDesc: String?
+                            for media in message.media {
+                                switch media {
+                                case let image as TelegramMediaImage:
+                                    mediaDesc = "Photo"
+                                    if let largest = image.representations.last {
+                                        mediaDesc = "Photo \(largest.dimensions.width)x\(largest.dimensions.height)"
+                                    }
+                                case let file as TelegramMediaFile:
+                                    if file.isVideo {
+                                        mediaDesc = "Video"
+                                    } else if file.isVoice {
+                                        mediaDesc = "Voice"
+                                    } else if file.isInstantVideo {
+                                        mediaDesc = "Video Message"
+                                    } else if file.isSticker {
+                                        mediaDesc = "Sticker"
+                                    } else {
+                                        mediaDesc = file.fileName ?? "File"
+                                    }
+                                case is TelegramMediaContact:
+                                    mediaDesc = "Contact"
+                                case is TelegramMediaMap:
+                                    mediaDesc = "Location"
+                                case let poll as TelegramMediaPoll:
+                                    mediaDesc = "Poll: \(poll.text)"
+                                default:
+                                    break
+                                }
+                            }
+                            
+                            AntiDeleteManager.shared.archiveMessage(
+                                globalId: messageId.id, // using messageId as globalId for local deletions
+                                peerId: messageId.peerId.toInt64(),
+                                messageId: messageId.id,
+                                timestamp: message.timestamp,
+                                authorId: message.author?.id.toInt64(),
+                                text: textContent,
+                                forwardAuthorId: message.forwardInfo?.author?.id.toInt64(),
+                                mediaDescription: mediaDesc
+                            )
+                        }
+                    }
+                    
+                    var nonCloudIdsToDelete: [MessageId] = []
+                    for messageId in ids {
+                        guard messageId.namespace == Namespaces.Message.Cloud else {
+                            nonCloudIdsToDelete.append(messageId)
+                            continue
+                        }
+                        
+                        AntiDeleteManager.shared.markAsDeleted(peerId: messageId.peerId.toInt64(), messageId: messageId.id)
+                        
+                        transaction.updateMessage(messageId, update: { currentMessage in
+                            var attributes = currentMessage.attributes
+                            if !attributes.contains(where: { $0 is DeletedMessageAttribute }) {
+                                attributes.append(DeletedMessageAttribute(deletedAt: Int32(Date().timeIntervalSince1970)))
+                            }
+                            let storeForwardInfo = currentMessage.forwardInfo.flatMap(StoreMessageForwardInfo.init)
+                            return .update(StoreMessage(id: currentMessage.id, customStableId: nil, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, threadId: currentMessage.threadId, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: currentMessage.tags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: storeForwardInfo, authorId: currentMessage.author?.id, text: currentMessage.text, attributes: attributes, media: currentMessage.media))
+                        })
+                    }
+                    
+                    if !nonCloudIdsToDelete.isEmpty {
+                        _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: nonCloudIdsToDelete, manualAddMessageThreadStatsDifference: { id, add, remove in
+                            addMessageThreadStatsDifference(threadKey: id, remove: remove, addedMessagePeer: nil, addedMessageId: nil, isOutgoing: false)
+                        })
+                    }
+                } else {
+                    _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: ids, manualAddMessageThreadStatsDifference: { id, add, remove in
+                        addMessageThreadStatsDifference(threadKey: id, remove: remove, addedMessagePeer: nil, addedMessageId: nil, isOutgoing: false)
+                    })
+                }
                 deletedMessageIds.append(contentsOf: ids.map { .messageId($0) })
             case let .UpdateMinAvailableMessage(id):
                 if let message = transaction.getMessage(id) {

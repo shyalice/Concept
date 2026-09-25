@@ -423,11 +423,23 @@ public class ShareRootControllerImpl {
                 isICloudEnabled: false
             )
             
-            let accountData: Signal<(ShareControllerEnvironment, ShareControllerAccountContext, [ShareControllerSwitchableAccount]), NoError> = accountManager.accountRecords()
+            let accountData: Signal<(ShareControllerEnvironment, ShareControllerAccountContext, [ShareControllerSwitchableAccount]), ShareAuthorizationError> = combineLatest(
+                accountManager.accountRecords(),
+                accountManager.sharedData(keys: [SharedDataKeys.conceptSecretPasscodes])
+            )
+            |> castError(ShareAuthorizationError.self)
             |> take(1)
-            |> mapToSignal { view -> Signal<(ShareControllerEnvironment, ShareControllerAccountContext, [ShareControllerSwitchableAccount]), NoError> in
+            |> mapToSignal { view, sharedData -> Signal<(ShareControllerEnvironment, ShareControllerAccountContext, [ShareControllerSwitchableAccount]), ShareAuthorizationError> in
+                let conceptSecretPasscodes = sharedData.entries[SharedDataKeys.conceptSecretPasscodes]?.get(ConceptSecretPasscodes.self) ?? ConceptSecretPasscodes.defaultSettings
+                let rootPath = initializationData.appGroupPath + "/telegram-data"
+                let checkedSecretPasscodes = conceptSecretPasscodes.withCheckedTimeoutUsingLockStateFile(rootPath: rootPath)
+                let inactiveAccountIds = checkedSecretPasscodes.inactiveAccountIds()
+                
                 var signals: [Signal<(AccountRecordId, AccountStateManager, EnginePeer)?, NoError>] = []
                 for record in view.records {
+                    if inactiveAccountIds.contains(record.id) {
+                        continue
+                    }
                     if record.attributes.contains(where: { attribute in
                         if case .loggedOut = attribute {
                             return true
@@ -465,7 +477,8 @@ public class ShareRootControllerImpl {
                     })
                 }
                 return combineLatest(signals)
-                |> mapToSignal { stateManagers -> Signal<(ShareControllerEnvironment, ShareControllerAccountContext, [ShareControllerSwitchableAccount]), NoError> in
+                |> castError(ShareAuthorizationError.self)
+                |> mapToSignal { stateManagers -> Signal<(ShareControllerEnvironment, ShareControllerAccountContext, [ShareControllerSwitchableAccount]), ShareAuthorizationError> in
                     var allAccounts: [ShareControllerSwitchableAccount] = []
                     for data in stateManagers {
                         guard let (id, stateManager, peer) = data else {
@@ -483,8 +496,9 @@ public class ShareRootControllerImpl {
                         ))
                     }
                     
-                    guard let currentAccount = allAccounts.first(where: { $0.account.accountId == view.currentRecord?.id }) else {
-                        return .never()
+                    let maybeCurrentAccount = allAccounts.first(where: { $0.account.accountId == view.currentRecord?.id }) ?? allAccounts.first
+                    guard let currentAccount = maybeCurrentAccount else {
+                        return .fail(.unauthorized)
                     }
                     
                     return .single((environment, currentAccount.account, allAccounts))
@@ -492,7 +506,6 @@ public class ShareRootControllerImpl {
             }
             
             let applicationInterface: Signal<(ShareControllerEnvironment, ShareControllerAccountContext, PostboxAccessChallengeData, [ShareControllerSwitchableAccount]), ShareAuthorizationError> = accountData
-            |> castError(ShareAuthorizationError.self)
             |> mapToSignal { data -> Signal<(ShareControllerEnvironment, ShareControllerAccountContext, PostboxAccessChallengeData, [ShareControllerSwitchableAccount]), ShareAuthorizationError> in
                 let (environment, context, otherAccounts) = data
                 

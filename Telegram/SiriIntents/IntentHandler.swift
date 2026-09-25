@@ -1,4 +1,5 @@
 import Foundation
+import SGAppGroupIdentifier
 import Intents
 import TelegramCore
 import Postbox
@@ -98,8 +99,7 @@ class DefaultIntentHandler: INExtension, INSendMessageIntentHandling, INSearchFo
         let apiHash: String = buildConfig.apiHash
         let languagesCategory = "ios"
         
-        let appGroupName = "group.\(baseAppBundleId)"
-        let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
+        let maybeAppGroupUrl = sgAppGroupContainerURL()
         
         guard let appGroupUrl = maybeAppGroupUrl else {
             return
@@ -878,8 +878,7 @@ private final class WidgetIntentHandler {
         
         let baseAppBundleId = String(appBundleIdentifier[..<lastDotRange.lowerBound])
         
-        let appGroupName = "group.\(baseAppBundleId)"
-        let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
+        let maybeAppGroupUrl = sgAppGroupContainerURL()
         
         guard let appGroupUrl = maybeAppGroupUrl else {
             return

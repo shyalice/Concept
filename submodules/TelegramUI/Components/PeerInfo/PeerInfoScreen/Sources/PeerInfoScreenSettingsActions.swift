@@ -1,5 +1,6 @@
 import SGStrings
 import SGSettingsUI
+import ConceptSettingsUI
 import Foundation
 import UIKit
 import Display
@@ -17,6 +18,8 @@ import TelegramPresentationData
 import PresentationDataUtils
 import PasswordSetupUI
 import InstantPageCache
+import PasscodeUI
+import UndoUI
 
 extension PeerInfoScreenNode {
     func openSettings(section: PeerInfoSettingsSection) {
@@ -46,6 +49,8 @@ extension PeerInfoScreenNode {
             }
         }
         switch section {
+        case .concept:
+            self.controller?.push(conceptSettingsController(context: self.context))
         case .swiftgram:
             self.controller?.push(sgSettingsController(context: self.context))
         case .swiftgramPro:
@@ -58,6 +63,128 @@ extension PeerInfoScreenNode {
                     self.controller?.present(self.context.sharedContext.makeSGUpdateIOSController(), animated: true)
                 }
             }
+        case .enterSecretCode:
+            let _ = (self.context.sharedContext.conceptSecretPasscodes
+            |> take(1)
+            |> deliverOnMainQueue).startStandalone(next: { [weak self] conceptSecretPasscodes in
+                guard let strongSelf = self else {
+                    return
+                }
+                
+                let controller = PasscodeSetupController(context: strongSelf.context, mode: .secretEntry(modal: true, .digits6))
+                
+                controller.check = { [weak controller] passcode in
+                    guard let strongSelf = self else {
+                        return false
+                    }
+                    
+                    if let sp = conceptSecretPasscodes.secretPasscodes.first(where: { $0.passcode == passcode }) {
+                        strongSelf.context.sharedContext.activateSecretPasscode(sp)
+                        
+                        controller?.dismiss()
+                        
+                        strongSelf.controller?.present(UndoOverlayController(presentationData: strongSelf.presentationData, content: .succeed(text: "Secret Passcode Activated", timeout: nil as Double?, customUndoText: nil as String?), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .current)
+                        
+                        return true
+                    }
+                    
+                    return false
+                }
+                
+                controller.navigationPresentation = .modal
+                push(controller)
+            })
+        case .manageSecretCodes:
+            let actionSheet = ActionSheetController(presentationData: self.presentationData)
+            actionSheet.setItemGroups([ActionSheetItemGroup(items: [
+                ActionSheetButtonItem(title: "Create Passcode", action: { [weak self, weak actionSheet] in
+                    actionSheet?.dismissAnimated()
+                    
+                    guard let strongSelf = self else {
+                        return
+                    }
+                    
+                    let _ = (strongSelf.context.sharedContext.conceptSecretPasscodes
+                    |> take(1)
+                    |> deliverOnMainQueue).startStandalone(next: { [weak self] conceptSecretPasscodes in
+                        guard let strongSelf = self else {
+                            return
+                        }
+                        
+                        let controller = PasscodeSetupController(context: strongSelf.context, mode: .secretSetup(.digits6))
+                        
+                        controller.validate = { (newPasscode: String) -> String? in
+                            
+                            if conceptSecretPasscodes.secretPasscodes.contains(where: { $0.passcode == newPasscode }) {
+                                return "Passcode is already in use."
+                            }
+                            
+                            return nil
+                        }
+                        
+                        controller.complete = { [weak self, weak controller] newPasscode, numerical in
+                            guard let strongSelf = self else {
+                                return
+                            }
+                            
+                            let _ = (updateConceptSecretPasscodes(strongSelf.context.sharedContext.accountManager, { current in
+                                let newSecretPasscode = ConceptSecretPasscode(passcode: newPasscode, active: true)
+                                return ConceptSecretPasscodes(secretPasscodes: current.secretPasscodes + [newSecretPasscode], dbCoveringAccounts: current.dbCoveringAccounts, cacheCoveringAccounts: current.cacheCoveringAccounts)
+                            })
+                            |> deliverOnMainQueue).startStandalone(completed: { [weak self] in
+                                guard let strongSelf = self else {
+                                    return
+                                }
+                                
+                                let nextController = secretPasscodeController(context: strongSelf.context, passcode: newPasscode, isNew: true)
+                                (controller?.navigationController as? NavigationController)?.replaceTopController(nextController, animated: true)
+                            })
+                        }
+                        
+                        push(controller)
+                    })
+                }),
+                
+                ActionSheetButtonItem(title: "Secret Passcode", action: { [weak self, weak actionSheet] in
+                    actionSheet?.dismissAnimated()
+                    
+                    guard let strongSelf = self else {
+                        return
+                    }
+                    
+                    let _ = (strongSelf.context.sharedContext.conceptSecretPasscodes
+                    |> take(1)
+                    |> deliverOnMainQueue).startStandalone(next: { [weak self] conceptSecretPasscodes in
+                        guard let strongSelf = self else {
+                            return
+                        }
+                        
+                        let controller = PasscodeSetupController(context: strongSelf.context, mode: .secretEntry(modal: false, .digits6))
+                        
+                        controller.check = { [weak controller] passcode in
+                            guard let strongSelf = self else {
+                                return false
+                            }
+                            
+                            if conceptSecretPasscodes.secretPasscodes.contains(where: { $0.passcode == passcode }) {
+                                let nextController = secretPasscodeController(context: strongSelf.context, passcode: passcode, isNew: false)
+                                (controller?.navigationController as? NavigationController)?.replaceTopController(nextController, animated: true)
+                                
+                                return true
+                            }
+                            
+                            return false
+                        }
+                        
+                        push(controller)
+                    })
+                })
+            ]), ActionSheetItemGroup(items: [
+                ActionSheetButtonItem(title: self.presentationData.strings.Common_Cancel, color: .accent, font: .bold, action: { [weak actionSheet] in
+                    actionSheet?.dismissAnimated()
+                })
+            ])])
+            self.controller?.present(actionSheet, in: .window(.root))
         case .avatar:
             self.controller?.openAvatarForEditing()
         case .edit:

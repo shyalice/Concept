@@ -798,8 +798,7 @@ private final class NotificationServiceHandler {
         let apiHash: String = buildConfig.apiHash
         let languagesCategory = "ios"
 
-        let appGroupName = "group.\(baseAppBundleId)"
-        let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
+        let maybeAppGroupUrl = sgAppGroupContainerURL()
 
         guard let appGroupUrl = maybeAppGroupUrl else {
             return nil
@@ -893,7 +892,8 @@ private final class NotificationServiceHandler {
                 ApplicationSpecificSharedDataKeys.voiceCallSettings,
                 ApplicationSpecificSharedDataKeys.automaticMediaDownloadSettings,
                 SharedDataKeys.loggingSettings,
-                ApplicationSpecificSharedDataKeys.sgStatus
+                ApplicationSpecificSharedDataKeys.sgStatus,
+                SharedDataKeys.conceptSecretPasscodes
             ])
         )
         |> take(1)
@@ -937,6 +937,18 @@ private final class NotificationServiceHandler {
 
             guard let strongSelf = self, let recordId = recordId else {
                 Logger.shared.log("NotificationService \(episode)", "Couldn't find a matching decryption key")
+
+                let content = NotificationContent(sgStatus: sgStatus, isLockedMessage: nil)
+                updateCurrentContent(content)
+                completed()
+
+                return
+            }
+            
+            let conceptSecretPasscodes = sharedData.entries[SharedDataKeys.conceptSecretPasscodes]?.get(ConceptSecretPasscodes.self) ?? ConceptSecretPasscodes.defaultSettings
+            let checkedSecretPasscodes = conceptSecretPasscodes.withCheckedTimeoutUsingLockStateFile(rootPath: rootPath)
+            if checkedSecretPasscodes.inactiveAccountIds().contains(recordId) {
+                Logger.shared.log("NotificationService \(episode)", "Account is hidden, dropping notification")
 
                 let content = NotificationContent(sgStatus: sgStatus, isLockedMessage: nil)
                 updateCurrentContent(content)

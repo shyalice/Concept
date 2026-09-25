@@ -2152,7 +2152,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                 
                 var audioTranscriptionProvidedByBoost = false
                 var autoTranslate = false
-                var isCopyProtectionEnabled: Bool = data.initialData?.peer?.isCopyProtectionEnabled ?? false
+                var isCopyProtectionEnabled: Bool = MiscSettingsManager.shared.shouldBypassCopyProtection ? false : (data.initialData?.peer?.isCopyProtectionEnabled ?? false)
                 for entry in view.additionalData {
                     if case let .peer(_, maybePeer) = entry, let peer = maybePeer {
                         if !isCopyProtectionEnabled {
@@ -2166,7 +2166,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                         }
                     } else if case let .cachedPeerData(_, cachedData) = entry, let cachedUserData = cachedData as? CachedUserData {
                         if !isCopyProtectionEnabled {
-                            isCopyProtectionEnabled = cachedUserData.flags.contains(.copyProtectionEnabled) || cachedUserData.flags.contains(.myCopyProtectionEnabled)
+                            isCopyProtectionEnabled = MiscSettingsManager.shared.shouldBypassCopyProtection ? false : (cachedUserData.flags.contains(.copyProtectionEnabled) || cachedUserData.flags.contains(.myCopyProtectionEnabled))
                         }
                     }
                 }

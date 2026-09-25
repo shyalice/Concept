@@ -3,12 +3,12 @@ import UIKit
 import Display
 import ComponentFlow
 
-final class ZoomComponent: Component {
+public final class ZoomComponent: Component {
     let availableValues: [Float]
     let value: Float
     let tag: AnyObject?
     
-    init(
+    public init(
         availableValues: [Float],
         value: Float,
         tag: AnyObject?
@@ -18,7 +18,7 @@ final class ZoomComponent: Component {
         self.tag = tag
     }
     
-    static func ==(lhs: ZoomComponent, rhs: ZoomComponent) -> Bool {
+    public static func ==(lhs: ZoomComponent, rhs: ZoomComponent) -> Bool {
         if lhs.availableValues != rhs.availableValues {
             return false
         }
@@ -28,7 +28,7 @@ final class ZoomComponent: Component {
         return true
     }
 
-    final class View: UIView, UIGestureRecognizerDelegate, ComponentTaggedView {
+    public final class View: UIView, UIGestureRecognizerDelegate, ComponentTaggedView {
         final class ItemView: HighlightTrackingButton {
             init() {
                 super.init(frame: .zero)
@@ -96,11 +96,11 @@ final class ZoomComponent: Component {
 
         }
         
-        override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        public override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
             return true
         }
         
-        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
             return true
         }
         
@@ -113,7 +113,7 @@ final class ZoomComponent: Component {
             self.backgroundView.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.3)
         }
 
-        func update(component: ZoomComponent, availableSize: CGSize, transition: ComponentTransition) -> CGSize {
+        public func update(component: ZoomComponent, availableSize: CGSize, transition: ComponentTransition) -> CGSize {
             self.component = component
         
             let sideInset: CGFloat = 3.0
@@ -162,11 +162,11 @@ final class ZoomComponent: Component {
         }
     }
 
-    func makeView() -> View {
+    public func makeView() -> View {
         return View()
     }
 
-    func update(view: View, availableSize: CGSize, state: EmptyComponentState, environment: Environment<Empty>, transition: ComponentTransition) -> CGSize {
+    public func update(view: View, availableSize: CGSize, state: EmptyComponentState, environment: Environment<Empty>, transition: ComponentTransition) -> CGSize {
         return view.update(component: self, availableSize: availableSize, transition: transition)
     }
 }
