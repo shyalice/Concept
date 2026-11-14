@@ -1,0 +1,8 @@
+{
+  "description": "Concept public badge API: skip browser Security Level challenge",
+  "expression": "(http.host eq \"push.killed.wtf\" and (http.request.uri.path eq \"/v3/badges\" or starts_with(http.request.uri.path, \"/v3/badges/\")) and http.user_agent eq \"cuteangelgirl/1.0\" and http.request.method in {\"GET\" \"POST\"})",
+  "action": "skip",
+  "action_parameters": { "products": ["securityLevel"] },
+  "logging": { "enabled": true },
+  "enabled": true
+}

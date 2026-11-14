@@ -1,0 +1,33 @@
+[Unit]
+Description=Concept badge API and administration bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=concept-badges
+Group=concept-badges
+StateDirectory=concept-badges
+StateDirectoryMode=0700
+EnvironmentFile=/etc/concept-badges.env
+ExecStart=/usr/bin/node /opt/concept-badges/src/main.js
+WorkingDirectory=/opt/concept-badges
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadWritePaths=/var/lib/concept-badges
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
