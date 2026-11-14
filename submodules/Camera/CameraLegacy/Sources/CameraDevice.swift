@@ -110,7 +110,7 @@ final class CameraDevice {
             }
             
             if device.isLowLightBoostSupported {
-                device.automaticallyEnablesLowLightBoostWhenAvailable = true
+                device.automaticallyEnablesLowLightBoostWhenAvailable = maxFramerate <= 30.0
             }
                         
             if device.isExposureModeSupported(.continuousAutoExposure) {

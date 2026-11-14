@@ -6,7 +6,7 @@ import CoreVideo
 import DeviceModel
 import Camera
 
-let roundVideoCaptureFrameRate: Double = 30.0
+let roundVideoCaptureFrameRate: Double = 60.0
 
 enum RoundVideoCaptureProfile: Int, CaseIterable {
     // Budget tiers: rear uses 16:9, front uses 4:3 to retain its field of view.
@@ -39,15 +39,19 @@ private func selectRoundVideoCaptureFormat(
     preferMediumProfile: Bool,
     maximumProfile: RoundVideoCaptureProfile = .high
 ) -> Int? {
-    let eligible = candidates.indices.filter { index in
+    let supported = candidates.indices.filter { index in
         let candidate = candidates[index]
         guard let profile = candidate.profile, profile.rawValue >= maximumProfile.rawValue else {
             return false
         }
         return candidate.isNV12
             && (!requiresMultiCam || candidate.supportsMultiCam)
-            && candidate.frameRateRanges.contains(where: { $0.contains(roundVideoCaptureFrameRate) })
+            && cameraClosestSupportedFrameRate(requested: roundVideoCaptureFrameRate, ranges: candidate.frameRateRanges) != nil
     }
+    let fast = supported.filter { index in
+        candidates[index].frameRateRanges.contains(where: { $0.contains(roundVideoCaptureFrameRate) })
+    }
+    let eligible = fast.isEmpty ? supported : fast
     return eligible.min { lhsIndex, rhsIndex in
         let lhs = candidates[lhsIndex]
         let rhs = candidates[rhsIndex]

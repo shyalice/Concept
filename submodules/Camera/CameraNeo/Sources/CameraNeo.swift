@@ -900,10 +900,9 @@ final class CameraNeo: NSObject, CameraProtocol {
         guard fps.isFinite, fps > 0.0 else {
             return
         }
-        guard let range = device.activeFormat.videoSupportedFrameRateRanges.first(where: { $0.minFrameRate <= fps && $0.maxFrameRate >= fps }) else {
+        guard let effectiveFps = cameraClosestSupportedFrameRate(requested: fps, ranges: device.activeFormat.videoSupportedFrameRateRanges.map { $0.minFrameRate ... $0.maxFrameRate }) else {
             return
         }
-        let effectiveFps = min(range.maxFrameRate, max(range.minFrameRate, fps))
         let duration = CMTime(seconds: 1.0 / effectiveFps, preferredTimescale: 60_000)
         self.withLockedDevice(device) { device in
             if #available(iOS 18.0, *), device.activeFormat.isAutoVideoFrameRateSupported, device.isAutoVideoFrameRateEnabled {

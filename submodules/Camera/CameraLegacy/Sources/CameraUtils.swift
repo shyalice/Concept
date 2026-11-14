@@ -18,34 +18,11 @@ extension AVFrameRateRange {
 
 extension AVCaptureDevice {
     func actualFPS(_ fps: Double) -> (fps: Double, duration: CMTime)? {
-        var durations: [CMTime] = []
-        var frameRates: [Double] = []
-        
-        for range in self.activeFormat.videoSupportedFrameRateRanges {
-            if range.minFrameRate == range.maxFrameRate {
-                durations.append(range.minFrameDuration)
-                frameRates.append(range.maxFrameRate)
-                continue
-            }
-            
-            if range.contains(rate: fps) {
-                return (fps, CMTimeMake(value: 100, timescale: Int32(100 * fps)))
-            }
-            
-            let actualFPS: Double = range.clamp(rate: fps)
-            return (actualFPS, CMTimeMake(value: 100, timescale: Int32(100 * actualFPS)))
-        }
-        
-        let diff = frameRates.map { abs($0 - fps) }
-        if let minElement: Float64 = diff.min() {
-            for i in 0..<diff.count where diff[i] == minElement {
-                return (frameRates[i], durations[i])
-            }
-        }
-        
-        return nil
+        let ranges = self.activeFormat.videoSupportedFrameRateRanges.map { $0.minFrameRate ... $0.maxFrameRate }
+        guard let actual = cameraClosestSupportedFrameRate(requested: fps, ranges: ranges) else { return nil }
+        return (actual, CMTime(seconds: 1.0 / actual, preferredTimescale: 60_000))
     }
-    
+
     var neutralZoomFactor: CGFloat {
         if #available(iOS 13.0, *) {
             if let indexOfWideAngle = self.constituentDevices.firstIndex(where: { $0.deviceType == .builtInWideAngleCamera }), indexOfWideAngle > 0 {
