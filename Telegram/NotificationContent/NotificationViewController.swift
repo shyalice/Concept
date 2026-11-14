@@ -1,5 +1,6 @@
 import UIKit
 import PasscodeCore
+import SGAppGroupIdentifier
 import UserNotifications
 import UserNotificationsUI
 import TelegramUI
@@ -25,9 +26,9 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             
             let languagesCategory = "ios"
             
-            let appGroupName = "group.\(baseAppBundleId)"
+            let appGroupName = sgAppGroupIdentifier()
             try! PasscodeEnvironment.shared.configure(PasscodeConfiguration(appGroupIdentifier: appGroupName, processRole: .appExtension))
-            let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
+            let maybeAppGroupUrl = sgAppGroupContainerURL()
             
             guard let appGroupUrl = maybeAppGroupUrl else {
                 return

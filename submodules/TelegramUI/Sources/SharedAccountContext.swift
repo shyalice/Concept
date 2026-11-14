@@ -1,3 +1,4 @@
+import ConceptNotifications
 // MARK: Swiftgram
 import SGIAP
 import SGPayWall
@@ -33,6 +34,8 @@ import LocalMediaResources
 import OverlayStatusController
 import AlertUI
 import PresentationDataUtils
+import DeviceAccess
+import ConceptSettings
 import OpenUserGeneratedUrl
 import LocationUI
 import AppLock
@@ -64,6 +67,8 @@ import ChatRecentActionsController
 import PeerInfoScreen
 import ChatQrCodeScreen
 import QrStudioScreen
+import SGAppGroupIdentifier
+import ContextMenuScreen
 import UndoUI
 import ChatMessageNotificationItem
 import ChatbotSetupScreen
@@ -200,10 +205,15 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         return self.authorizationPushConfigurationValue.get()
     }
     
-    private var activeAccountsValue: (primary: AccountContext?, accounts: [(AccountRecordId, AccountContext, Int32)], currentAuth: UnauthorizedAccount?)?
+    private var activeAccountsValue: (primary: AccountContext?, accounts: [(AccountRecordId, AccountContext, Int32)], inactiveAccounts: [(AccountRecordId, AccountContext, Int32)], currentAuth: UnauthorizedAccount?)?
     private let activeAccountsPromise = Promise<(primary: AccountContext?, accounts: [(AccountRecordId, AccountContext, Int32)], currentAuth: UnauthorizedAccount?)>()
+    private let inactiveAccountContextsPromise = Promise<[(AccountRecordId, AccountContext, Int32)]>()
     public var activeAccountContexts: Signal<(primary: AccountContext?, accounts: [(AccountRecordId, AccountContext, Int32)], currentAuth: UnauthorizedAccount?), NoError> {
         return self.activeAccountsPromise.get()
+    }
+
+    public var inactiveAccountContexts: Signal<[(AccountRecordId, AccountContext, Int32)], NoError> {
+        return self.inactiveAccountContextsPromise.get()
     }
     private let managedAccountDisposables = DisposableDict<AccountRecordId>()
     private let activeAccountsWithInfoPromise = Promise<(primary: AccountRecordId?, accounts: [AccountWithInfo])>()
@@ -218,6 +228,21 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     }
     
     private let registeredNotificationTokensDisposable = MetaDisposable()
+    private lazy var notificationRegistration = NotificationRegistrationCoordinator(event: { [weak self] key, result in
+        guard let self else { return }
+        if key.channel == "messages" {
+            NotificationRegistrationDiagnostics.recordServerResult(accountId: key.accountId, result: result.diagnostic)
+        }
+        if key.channel == "messages", result == .tokenInvalidated, let token = self.latestApsRegistrationToken, self.invalidatedApsToken != token {
+            self.invalidatedApsToken = token
+            self.appDelegate?.requestNotificationTokenInvalidation()
+        }
+    })
+    private var latestVoipRegistrationToken: Data?
+    private var latestApsRegistrationToken: Data?
+    private var notificationRetryObserver: NSObjectProtocol?
+    private var lastNotificationRegistrationRefresh: Double = 0
+
     
     public let mediaManager: MediaManager
     public let contactDataManager: DeviceContactDataManager?
@@ -286,6 +311,25 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     public let currentInAppNotificationSettings: Atomic<InAppNotificationSettings>
     private var inAppNotificationSettingsDisposable: Disposable?
     
+    public var conceptSettings: Signal<ConceptSettings, NoError> {
+        return self.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.conceptSettings])
+        |> map { sharedData in
+            return sharedData.entries[ApplicationSpecificSharedDataKeys.conceptSettings]?.get(ConceptSettings.self) ?? ConceptSettings.defaultSettings
+        }
+    }
+    public let currentConceptSettings: Atomic<ConceptSettings>
+    private var conceptSettingsDisposable: Disposable?
+
+    public var conceptSecretPasscodes: Signal<ConceptSecretPasscodes, NoError> {
+        return self.accountManager.sharedData(keys: [SharedDataKeys.conceptSecretPasscodes])
+        |> map { sharedData in
+            return sharedData.entries[SharedDataKeys.conceptSecretPasscodes]?.get(ConceptSecretPasscodes.self) ?? ConceptSecretPasscodes.defaultSettings
+        }
+    }
+    public let currentConceptSecretPasscodes: Atomic<ConceptSecretPasscodes>
+    private var conceptSecretPasscodesDisposable: Disposable?
+    private var applicationInForegroundDisposable: Disposable?
+
     public var currentAutomaticMediaDownloadSettings: MediaAutoDownloadSettings
     private let _automaticMediaDownloadSettings = Promise<MediaAutoDownloadSettings>()
     public var automaticMediaDownloadSettings: Signal<MediaAutoDownloadSettings, NoError> {
@@ -374,12 +418,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             guard let data else {
                 return nil
             }
-            let sandbox: Bool
-            #if DEBUG
-            sandbox = true
-            #else
-            sandbox = false
-            #endif
+            let sandbox = sgAPNsIsSandbox()
             return AuthorizationCodePushNotificationConfiguration(
                 token: hexString(data),
                 isSandbox: sandbox
@@ -401,6 +440,8 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         self.currentMediaDisplaySettings = Atomic(value: initialPresentationDataAndSettings.mediaDisplaySettings)
         self.currentStickerSettings = Atomic(value: initialPresentationDataAndSettings.stickerSettings)
         self.currentInAppNotificationSettings = Atomic(value: initialPresentationDataAndSettings.inAppNotificationSettings)
+        self.currentConceptSettings = Atomic(value: ConceptSettings.defaultSettings)
+        self.currentConceptSecretPasscodes = Atomic(value: ConceptSecretPasscodes.defaultSettings)
         self.currentChatSettings = Atomic(value: initialPresentationDataAndSettings.chatSettings)
         
         if automaticEnergyUsageShouldBeOnNow(settings: self.currentAutomaticMediaDownloadSettings) {
@@ -530,6 +571,80 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             }
         })
         
+        self.conceptSettingsDisposable = (self.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.conceptSettings])
+        |> deliverOnMainQueue).start(next: { [weak self] sharedData in
+            if let strongSelf = self {
+                if let settings = sharedData.entries[ApplicationSpecificSharedDataKeys.conceptSettings]?.get(ConceptSettings.self) {
+                    let _ = strongSelf.currentConceptSettings.swap(settings)
+                }
+            }
+        })
+
+        self.conceptSecretPasscodesDisposable = (self.accountManager.sharedData(keys: [SharedDataKeys.conceptSecretPasscodes])
+        |> deliverOnMainQueue).start(next: { [weak self] sharedData in
+            if let strongSelf = self {
+                let previous = strongSelf.currentConceptSecretPasscodes.with { $0 }
+                let next = sharedData.entries[SharedDataKeys.conceptSecretPasscodes]?.get(ConceptSecretPasscodes.self) ?? ConceptSecretPasscodes.defaultSettings
+                let newlyHiddenAccountIds = next.inactiveAccountIds().subtracting(previous.inactiveAccountIds())
+                let newlyHiddenPeerIds = next.inactiveSecretChatPeerIdsForAllAccounts().subtracting(previous.inactiveSecretChatPeerIdsForAllAccounts())
+
+                let _ = strongSelf.currentConceptSecretPasscodes.swap(next)
+                strongSelf.inactiveAccountsUpdated(next.inactiveAccountIds())
+
+                if (!newlyHiddenAccountIds.isEmpty || !newlyHiddenPeerIds.isEmpty) && strongSelf.applicationBindings.isMainApp {
+                    strongSelf.hideUIOfInactiveSecrets(accountIds: newlyHiddenAccountIds, peerIds: newlyHiddenPeerIds)
+                }
+
+                if strongSelf.applicationBindings.isMainApp {
+                    var shouldNavigateToAccountId: AccountRecordId? = nil
+                    for passcode in next.secretPasscodes {
+                        if passcode.active, let nav = passcode.onRevealNavigateTo {
+                            let wasActive = previous.secretPasscodes.first(where: { $0.passcode == passcode.passcode })?.active ?? false
+                            if !wasActive {
+                                shouldNavigateToAccountId = nav.accountId
+                            }
+                        }
+                    }
+
+                    if let accountId = shouldNavigateToAccountId {
+                        strongSelf.switchToAccount(id: accountId, fromSettingsController: nil, withChatListController: nil)
+                    } else {
+                        let _ = strongSelf.accountManager.transaction({ transaction -> Void in
+                            if let currentId = transaction.getCurrent()?.0, next.inactiveAccountIds().contains(currentId) {
+                                let records = transaction.getRecords()
+                                if let firstVisible = records.first(where: { !next.inactiveAccountIds().contains($0.id) }) {
+                                    transaction.setCurrentId(firstVisible.id)
+                                }
+                            }
+                        }).start()
+                    }
+                }
+
+                let _ = (strongSelf.activeAccountContexts
+                |> take(1)
+                |> deliverOnMainQueue).start(next: { contexts in
+                    for (id, context, _) in contexts.accounts {
+                        context.account.postbox.updatePeerIdsExcludedFromUnreadCounters(next.inactiveSecretChatPeerIds(accountId: id))
+                    }
+                })
+            }
+        })
+
+        self.applicationInForegroundDisposable = (self.applicationBindings.applicationInForeground
+        |> deliverOnMainQueue).start(next: { [weak self] inForeground in
+            if let strongSelf = self, inForeground {
+                let now = ProcessInfo.processInfo.systemUptime
+                if now - strongSelf.lastNotificationRegistrationRefresh >= 60 {
+                    strongSelf.lastNotificationRegistrationRefresh = now
+                    strongSelf.updateNotificationTokensRegistration()
+                    strongSelf.notificationRegistration.refresh()
+                }
+                let _ = updateConceptSecretPasscodes(strongSelf.accountManager, { current in
+                    return current.withCheckedTimeoutUsingLockStateFile(rootPath: rootPath)
+                }).start()
+            }
+        })
+
         self.mediaInputSettingsDisposable = (self.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.mediaInputSettings])
         |> deliverOnMainQueue).start(next: { [weak self] sharedData in
             if let strongSelf = self {
@@ -706,8 +821,10 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             var addedSignals: [Signal<AddedAccountResult, NoError>] = []
             var addedAuthSignal: Signal<UnauthorizedAccount?, NoError> = .single(nil)
             for (id, attributes) in records {
-                if self.activeAccountsValue?.accounts.firstIndex(where: { $0.0 == id}) == nil {
-                    addedSignals.append(accountWithId(accountManager: accountManager, networkArguments: networkArguments, id: id, encryptionParameters: encryptionParameters, supplementary: !applicationBindings.isMainApp, isSupportUser: attributes.isSupportUser, rootPath: rootPath, beginWithTestingEnvironment: attributes.isTestingEnvironment, backupData: attributes.backupData, auxiliaryMethods: makeTelegramAccountAuxiliaryMethods(uploadInBackground: appDelegate?.uploadInBackround))
+                let existsInAccounts = self.activeAccountsValue?.accounts.contains(where: { $0.0 == id }) ?? false
+                let existsInInactive = self.activeAccountsValue?.inactiveAccounts.contains(where: { $0.0 == id }) ?? false
+                if !existsInAccounts && !existsInInactive {
+                    addedSignals.append(accountWithId(accountManager: accountManager, networkArguments: networkArguments, id: id, encryptionParameters: encryptionParameters, supplementary: !applicationBindings.isMainApp, isSupportUser: attributes.isSupportUser, rootPath: rootPath, beginWithTestingEnvironment: attributes.isTestingEnvironment, backupData: attributes.backupData, auxiliaryMethods: makeTelegramAccountAuxiliaryMethods(uploadInBackground: appDelegate?.uploadInBackround), initialPeerIdsExcludedFromUnreadCounters: self.currentConceptSecretPasscodes.with({ $0.inactiveSecretChatPeerIds(accountId: id) }))
                     |> mapToSignal { result -> Signal<AddedAccountResult, NoError> in
                         switch result {
                             case let .authorized(account):
@@ -731,7 +848,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                 }
             }
             if let authRecord = authRecord, authRecord.0 != self.activeAccountsValue?.currentAuth?.id {
-                addedAuthSignal = accountWithId(accountManager: accountManager, networkArguments: networkArguments, id: authRecord.0, encryptionParameters: encryptionParameters, supplementary: !applicationBindings.isMainApp, isSupportUser: false, rootPath: rootPath, beginWithTestingEnvironment: authRecord.1, backupData: nil, auxiliaryMethods: makeTelegramAccountAuxiliaryMethods(uploadInBackground: appDelegate?.uploadInBackround))
+                addedAuthSignal = accountWithId(accountManager: accountManager, networkArguments: networkArguments, id: authRecord.0, encryptionParameters: encryptionParameters, supplementary: !applicationBindings.isMainApp, isSupportUser: false, rootPath: rootPath, beginWithTestingEnvironment: authRecord.1, backupData: nil, auxiliaryMethods: makeTelegramAccountAuxiliaryMethods(uploadInBackground: appDelegate?.uploadInBackround), initialPeerIdsExcludedFromUnreadCounters: self.currentConceptSecretPasscodes.with({ $0.inactiveSecretChatPeerIds(accountId: authRecord.0) }))
                 |> mapToSignal { result -> Signal<UnauthorizedAccount?, NoError> in
                     switch result {
                         case let .unauthorized(account):
@@ -783,7 +900,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                 
                 var hadUpdates = false
                 if self.activeAccountsValue == nil {
-                    self.activeAccountsValue = (nil, [], nil)
+                    self.activeAccountsValue = (nil, [], [], nil)
                     hadUpdates = true
                 }
                 
@@ -808,10 +925,19 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                                 self.managedAccountDisposables.set(nil, forKey: account.id)
                                 assertionFailure()
                             }
+                            if let index = self.activeAccountsValue?.inactiveAccounts.firstIndex(where: { $0.0 == account.id }) {
+                                self.activeAccountsValue?.inactiveAccounts.remove(at: index)
+                                self.managedAccountDisposables.set(nil, forKey: account.id)
+                                assertionFailure()
+                            }
 
                             let context = AccountContextImpl(sharedContext: self, account: account, limitsConfiguration: accountRecord.3.limitsConfiguration ?? .defaultValue, contentSettings: accountRecord.3.contentSettings ?? .default, appConfiguration: accountRecord.3.appConfiguration ?? .defaultValue, availableReplyColors: accountRecord.3.availableReplyColors, availableProfileColors: accountRecord.3.availableProfileColors)
 
-                            self.activeAccountsValue!.accounts.append((account.id, context, accountRecord.2))
+                            if self.currentConceptSecretPasscodes.with({ $0.inactiveAccountIds() }).contains(account.id) {
+                                self.activeAccountsValue!.inactiveAccounts.append((account.id, context, accountRecord.2))
+                            } else {
+                                self.activeAccountsValue!.accounts.append((account.id, context, accountRecord.2))
+                            }
                             
                             self.managedAccountDisposables.set(self.updateAccountBackupData(account: account).start(), forKey: account.id)
                             account.resetStateManagement()
@@ -826,7 +952,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                     }
                 }
                 var removedIds: [AccountRecordId] = []
-                for id in self.activeAccountsValue!.accounts.map({ $0.0 }) {
+                for id in self.activeAccountsValue!.accounts.map({ $0.0 }) + self.activeAccountsValue!.inactiveAccounts.map({ $0.0 }) {
                     if records[id] == nil {
                         removedIds.append(id)
                     }
@@ -835,6 +961,10 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                     hadUpdates = true
                     if let index = self.activeAccountsValue?.accounts.firstIndex(where: { $0.0 == id }) {
                         self.activeAccountsValue?.accounts.remove(at: index)
+                        self.managedAccountDisposables.set(nil, forKey: id)
+                    }
+                    if let index = self.activeAccountsValue?.inactiveAccounts.firstIndex(where: { $0.0 == id }) {
+                        self.activeAccountsValue?.inactiveAccounts.remove(at: index)
                         self.managedAccountDisposables.set(nil, forKey: id)
                     }
                 }
@@ -864,7 +994,9 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                 }
                 if hadUpdates {
                     self.activeAccountsValue!.accounts.sort(by: { $0.2 < $1.2 })
-                    self.activeAccountsPromise.set(.single(self.activeAccountsValue!))
+                    self.activeAccountsValue!.inactiveAccounts.sort(by: { $0.2 < $1.2 })
+                    self.activeAccountsPromise.set(.single((self.activeAccountsValue!.primary, self.activeAccountsValue!.accounts, self.activeAccountsValue!.currentAuth)))
+                    self.inactiveAccountContextsPromise.set(.single(self.activeAccountsValue!.inactiveAccounts))
                     
                     self.performAccountSettingsImportIfNecessary()
                 }
@@ -875,8 +1007,9 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             }))
         })
         
-        self.activeAccountsWithInfoPromise.set(self.activeAccountContexts
-        |> mapToSignal { primary, accounts, _ -> Signal<(primary: AccountRecordId?, accounts: [AccountWithInfo]), NoError> in
+        self.activeAccountsWithInfoPromise.set(combineLatest(self.activeAccountContexts, self.conceptSecretPasscodes)
+        |> mapToSignal { activeAccountContexts, conceptSecretPasscodes -> Signal<(primary: AccountRecordId?, accounts: [AccountWithInfo]), NoError> in
+            let (primary, accounts, _) = activeAccountContexts
             return combineLatest(accounts.map { _, context, _ -> Signal<AccountWithInfo?, NoError> in
                 return context.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId))
                 |> map { peer -> AccountWithInfo? in
@@ -888,13 +1021,17 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                 |> distinctUntilChanged
             })
             |> map { accountsWithInfo -> (primary: AccountRecordId?, accounts: [AccountWithInfo]) in
+                let inactiveAccountIds = conceptSecretPasscodes.inactiveAccountIds()
                 var accountsWithInfoResult: [AccountWithInfo] = []
                 for info in accountsWithInfo {
-                    if let info = info {
+                    if let info = info, !inactiveAccountIds.contains(info.account.id) {
                         accountsWithInfoResult.append(info)
                     }
                 }
-                return (primary?.account.id, accountsWithInfoResult)
+
+                let actualPrimary = (primary != nil && !inactiveAccountIds.contains(primary!.account.id)) ? primary?.account.id : accountsWithInfoResult.first?.account.id
+
+                return (actualPrimary, accountsWithInfoResult)
             }
         })
         
@@ -1176,13 +1313,63 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         }*/
     }
     
+    func inactiveAccountsUpdated(_ inactiveAccountIds: Set<AccountRecordId>) {
+        assert(Queue.mainQueue().isCurrent())
+
+        guard self.activeAccountsValue != nil else {
+            return
+        }
+
+        var hadUpdates = false
+
+        if self.activeAccountsValue!.accounts.contains(where: { inactiveAccountIds.contains($0.0) }) {
+            self.activeAccountsValue!.inactiveAccounts.append(contentsOf: self.activeAccountsValue!.accounts.filter({ inactiveAccountIds.contains($0.0) }))
+            self.activeAccountsValue!.accounts.removeAll(where: { inactiveAccountIds.contains($0.0) })
+            hadUpdates = true
+        }
+        if self.activeAccountsValue!.inactiveAccounts.contains(where: { !inactiveAccountIds.contains($0.0) }) {
+            self.activeAccountsValue!.accounts.append(contentsOf: self.activeAccountsValue!.inactiveAccounts.filter({ !inactiveAccountIds.contains($0.0) }))
+            self.activeAccountsValue!.inactiveAccounts.removeAll(where: { !inactiveAccountIds.contains($0.0) })
+            hadUpdates = true
+        }
+
+        if hadUpdates {
+            self.activeAccountsValue!.accounts.sort(by: { $0.2 < $1.2 })
+            self.activeAccountsValue!.inactiveAccounts.sort(by: { $0.2 < $1.2 })
+        }
+
+        var primary: AccountContext?
+        if let currentPrimary = self.activeAccountsValue!.primary, !inactiveAccountIds.contains(currentPrimary.account.id) {
+            primary = currentPrimary
+        }
+        if primary == nil && !self.activeAccountsValue!.accounts.isEmpty {
+            primary = self.activeAccountsValue!.accounts.sorted(by: { $0.2 < $1.2 }).first?.1
+        }
+
+        if primary !== self.activeAccountsValue!.primary {
+            hadUpdates = true
+            self.activeAccountsValue!.primary?.account.postbox.clearCaches()
+            self.activeAccountsValue!.primary?.account.resetCachedData()
+            self.activeAccountsValue!.primary = primary
+        }
+
+        if hadUpdates {
+            self.activeAccountsPromise.set(.single((self.activeAccountsValue!.primary, self.activeAccountsValue!.accounts, self.activeAccountsValue!.currentAuth)))
+            self.inactiveAccountContextsPromise.set(.single(self.activeAccountsValue!.inactiveAccounts))
+        }
+    }
+
     deinit {
         assertionFailure("SharedAccountContextImpl is not supposed to be deallocated")
         self.registeredNotificationTokensDisposable.dispose()
+        if let observer = self.notificationRetryObserver { NotificationCenter.default.removeObserver(observer) }
         self.presentationDataDisposable.dispose()
         self.automaticMediaDownloadSettingsDisposable.dispose()
         self.currentAutodownloadSettingsDisposable.dispose()
         self.inAppNotificationSettingsDisposable?.dispose()
+        self.conceptSettingsDisposable?.dispose()
+        self.conceptSecretPasscodesDisposable?.dispose()
+        self.applicationInForegroundDisposable?.dispose()
         self.mediaInputSettingsDisposable?.dispose()
         self.mediaDisplaySettingsDisposable?.dispose()
         self.chatSettingsDisposable?.dispose()
@@ -1847,138 +2034,46 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     }
     
     public func updateNotificationTokensRegistration() {
-        let sandbox: Bool
-        #if DEBUG
-        sandbox = true
-        #else
-        sandbox = false
-        #endif
-        
+        if self.notificationRetryObserver == nil {
+            self.notificationRetryObserver = NotificationCenter.default.addObserver(forName: NotificationRegistrationCoordinator.retryRequested, object: nil, queue: .main) { [weak self] _ in
+                self?.notificationRegistration.refresh()
+            }
+        }
         let settings = self.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.inAppNotificationSettings])
-        |> map { sharedData -> (allAccounts: Bool, includeMuted: Bool) in
-            let settings = sharedData.entries[ApplicationSpecificSharedDataKeys.inAppNotificationSettings]?.get(InAppNotificationSettings.self) ?? InAppNotificationSettings.defaultSettings
-            return (settings.displayNotificationsFromAllAccounts, false)
+        |> map { sharedData -> Bool in
+            let settings = sharedData.entries[ApplicationSpecificSharedDataKeys.inAppNotificationSettings]?.get(InAppNotificationSettings.self) ?? .defaultSettings
+            return settings.displayNotificationsFromAllAccounts
         }
-        |> distinctUntilChanged(isEqual: { lhs, rhs in
-            if lhs.allAccounts != rhs.allAccounts {
-                return false
-            }
-            if lhs.includeMuted != rhs.includeMuted {
-                return false
-            }
-            return true
-        })
-        
-        let updatedApsToken = self.apsNotificationToken |> distinctUntilChanged(isEqual: { $0 == $1 })
-        self.registeredNotificationTokensDisposable.set((combineLatest(
-            queue: .mainQueue(),
-            settings,
-            self.activeAccountContexts,
-            updatedApsToken
-        )
-        |> mapToSignal { settings, activeAccountsAndInfo, apsNotificationToken -> Signal<(Bool, Data?), NoError> in
-            let (primary, activeAccounts, _) = activeAccountsAndInfo
-            var appliedApsList: [Signal<Bool?, NoError>] = []
-            var appliedVoipList: [Signal<Never, NoError>] = []
-            var activeProductionUserIds = activeAccounts.map({ $0.1 }).filter({ !$0.account.testingEnvironment }).map({ $0.account.peerId.id })
-            var activeTestingUserIds = activeAccounts.map({ $0.1 }).filter({ $0.account.testingEnvironment }).map({ $0.account.peerId.id })
-            
-            let allProductionUserIds = activeProductionUserIds
-            let allTestingUserIds = activeTestingUserIds
-            
-            if !settings.allAccounts {
-                if let primary = primary {
-                    if !primary.account.testingEnvironment {
-                        activeProductionUserIds = [primary.account.peerId.id]
-                        activeTestingUserIds = []
-                    } else {
-                        activeProductionUserIds = []
-                        activeTestingUserIds = [primary.account.peerId.id]
-                    }
-                } else {
-                    activeProductionUserIds = []
-                    activeTestingUserIds = []
+        |> distinctUntilChanged
+        let aps = Signal<Data?, NoError>.single(self.latestApsRegistrationToken) |> then(self.apsNotificationToken)
+        let voip = Signal<Data?, NoError>.single(self.latestVoipRegistrationToken) |> then(self.voipNotificationToken)
+        self.registeredNotificationTokensDisposable.set((combineLatest(queue: .mainQueue(), settings, self.activeAccountContexts, aps, voip, self.conceptSecretPasscodes)
+        |> deliverOnMainQueue).start(next: { [weak self] allAccounts, accounts, aps, voip, rawSecrets in
+            guard let self else { return }
+            self.latestApsRegistrationToken = aps
+            self.latestVoipRegistrationToken = voip
+            var requests: [NotificationRegistrationRequest] = []
+            let selected = accounts.accounts.filter { allAccounts || accounts.primary?.account.id == $0.1.account.id }
+            for (_, account, _) in selected {
+                let others = selected.filter { $0.1.account.testingEnvironment == account.account.testingEnvironment }.map { $0.1.account.peerId.id }
+                if let aps {
+                    requests.append(conceptNotificationRegistrationRequest(account: account, token: aps, sandbox: sgAPNsIsSandbox(), otherUserIds: others))
+                }
+                if let voip {
+                    let ids = others.filter { $0 != account.account.peerId.id }
+                    let info: [String: Any] = ["token": voip.base64EncodedString(), "sandbox": sgAPNsIsSandbox(), "others": ids.map { $0._internalGetInt64Value() }.sorted()]
+                    let fingerprint = (try? JSONSerialization.data(withJSONObject: info, options: [.sortedKeys])) ?? voip
+                    requests.append(NotificationRegistrationRequest(key: .init(accountId: account.account.id.int64, channel: "voip"), credential: voip, fingerprint: fingerprint, register: {
+                        account.engine.accountData.registerNotificationToken(token: voip, type: .voip, sandbox: sgAPNsIsSandbox(), otherAccountUserIds: ids, excludeMutedChats: false)
+                    }, unregister: {
+                        account.engine.accountData.unregisterNotificationToken(token: voip, type: .voip, otherAccountUserIds: ids)
+                    }))
                 }
             }
-            
-            for (_, account, _) in activeAccounts {
-                let appliedAps: Signal<Bool, NoError>
-                let appliedVoip: Signal<Never, NoError>
-                
-                if !activeProductionUserIds.contains(account.account.peerId.id) && !activeTestingUserIds.contains(account.account.peerId.id) {
-                    if let apsNotificationToken {
-                        appliedAps = account.engine.accountData.unregisterNotificationToken(token: apsNotificationToken, type: .aps(encrypt: false), otherAccountUserIds: (account.account.testingEnvironment ? allTestingUserIds : allProductionUserIds).filter({ $0 != account.account.peerId.id }))
-                        |> map { _ -> Bool in
-                        }
-                        |> then(.single(true))
-                    } else {
-                        appliedAps = .single(true)
-                    }
-                    
-                    appliedVoip = self.voipNotificationToken
-                    |> distinctUntilChanged(isEqual: { $0 == $1 })
-                    |> mapToSignal { token -> Signal<Never, NoError> in
-                        guard let token = token else {
-                            return .complete()
-                        }
-                        return account.engine.accountData.unregisterNotificationToken(token: token, type: .voip, otherAccountUserIds: (account.account.testingEnvironment ? allTestingUserIds : allProductionUserIds).filter({ $0 != account.account.peerId.id }))
-                    }
-                } else {
-                    if let apsNotificationToken {
-                        appliedAps = account.engine.accountData.registerNotificationToken(token: apsNotificationToken, type: .aps(encrypt: true), sandbox: sandbox, otherAccountUserIds: (account.account.testingEnvironment ? activeTestingUserIds : activeProductionUserIds).filter({ $0 != account.account.peerId.id }), excludeMutedChats: !settings.includeMuted)
-                    } else {
-                        appliedAps = .single(true)
-                    }
-                    appliedVoip = self.voipNotificationToken
-                    |> distinctUntilChanged(isEqual: { $0 == $1 })
-                    |> mapToSignal { token -> Signal<Never, NoError> in
-                        guard let token = token else {
-                            return .complete()
-                        }
-                        return account.engine.accountData.registerNotificationToken(token: token, type: .voip, sandbox: sandbox, otherAccountUserIds: (account.account.testingEnvironment ? activeTestingUserIds : activeProductionUserIds).filter({ $0 != account.account.peerId.id }), excludeMutedChats: !settings.includeMuted)
-                        |> ignoreValues
-                    }
-                }
-                
-                appliedApsList.append(Signal<Bool?, NoError>.single(nil) |> then(appliedAps |> map(Optional.init)))
-                appliedVoipList.append(appliedVoip)
-            }
-            
-            let allApsSuccess = combineLatest(appliedApsList)
-            |> map { values -> Bool in
-                return !values.contains(false)
-            }
-            
-            let allVoipSuccess = combineLatest(appliedVoipList)
-            
-            return combineLatest(
-                allApsSuccess,
-                Signal<Void, NoError>.single(Void())
-                |> then(
-                    allVoipSuccess
-                    |> map { _ -> Void in
-                        return Void()
-                    }
-                )
-            )
-            |> map { allApsSuccess, _ -> (Bool, Data?) in
-                return (allApsSuccess, apsNotificationToken)
-            }
-        }
-        |> deliverOnMainQueue).start(next: { [weak self] allApsSuccess, apsToken in
-            guard let self, let appDelegate = self.appDelegate else {
-                return
-            }
-            if !allApsSuccess {
-                if self.invalidatedApsToken != apsToken {
-                    self.invalidatedApsToken = apsToken
-                    
-                    appDelegate.requestNotificationTokenInvalidation()
-                }
-            }
+            self.notificationRegistration.update(requests)
         }))
     }
-    
+
     public func beginNewAuth(testingEnvironment: Bool) {
         let _ = self.accountManager.transaction({ transaction -> Void in
             let _ = transaction.createAuth([.environment(AccountEnvironmentAttribute(environment: testingEnvironment ? .test : .production))])
@@ -4566,10 +4661,136 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         return installedStickerPacksController(context: context, mode: mode, forceTheme: forceTheme)
     }
     
+    public func hideAllSecrets() {
+        let _ = updateConceptSecretPasscodes(self.accountManager, { current in
+            let updated = current.secretPasscodes.map { $0.withUpdated(active: false) }
+            return ConceptSecretPasscodes(secretPasscodes: updated, dbCoveringAccounts: current.dbCoveringAccounts, cacheCoveringAccounts: current.cacheCoveringAccounts)
+        }).start()
+    }
+
+    public func activateSecretPasscode(_ passcode: ConceptSecretPasscode) {
+        let _ = updateConceptSecretPasscodes(self.accountManager, { current in
+            var current = current
+            if let index = current.secretPasscodes.firstIndex(where: { $0.passcode == passcode.passcode }) {
+                var secretPasscodes = current.secretPasscodes
+                secretPasscodes[index] = secretPasscodes[index].withUpdated(active: true)
+                current = ConceptSecretPasscodes(secretPasscodes: secretPasscodes, dbCoveringAccounts: current.dbCoveringAccounts, cacheCoveringAccounts: current.cacheCoveringAccounts)
+            }
+            return current
+        }).start()
+    }
+
     public func makeChannelStatsController(context: AccountContext, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?, peerId: EnginePeer.Id, boosts: Bool, boostStatus: ChannelBoostStatus?) -> ViewController {
         return channelStatsController(context: context, updatedPresentationData: updatedPresentationData, peerId: peerId, section: boosts ? .boosts : .stats, boostStatus: boostStatus)
     }
     
+    private func hideUIOfInactiveSecrets(accountIds: Set<AccountRecordId>, peerIds: Set<EnginePeer.Id>) {
+        assert(Queue.mainQueue().isCurrent())
+
+        UIView.performWithoutAnimation {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            CATransaction.setAnimationDuration(0.0)
+
+
+            var insideInactiveSecretChat = false
+            var dismissesIfInsideInactiveSecretChat: [() -> Void] = []
+
+            self.mainWindow?.forEachViewController({ controller in
+                if let controller = controller as? ActionSheetController {
+                    controller.dismiss(animated: false)
+                }
+
+                if let controller = controller as? ContextMenuController {
+                    controller.dismiss(completion: nil)
+                }
+
+                if let controller = controller as? AlertController {
+                    dismissesIfInsideInactiveSecretChat.append { [weak controller] in
+                        controller?.dismiss()
+                    }
+                }
+
+                if let controller = controller as? ChatControllerImpl {
+                    if let peerId = controller.chatLocation.peerId {
+                        if peerIds.contains(peerId) {
+                            insideInactiveSecretChat = true
+                            controller.dismiss(animated: false)
+                        }
+                    }
+                }
+
+                if let controller = controller as? PeerInfoScreenImpl {
+                    if peerIds.contains(controller.peerId) {
+                        insideInactiveSecretChat = true
+                        controller.dismiss(animated: false)
+                    }
+                }
+
+                if let controller = controller as? TabBarController {
+                    for controller in controller.controllers {
+                        if let controller = controller as? ChatListControllerImpl {
+                            controller.deactivateSearch(animated: false)
+                            break
+                        }
+                    }
+                }
+
+                if let controller = controller as? NotificationContainerController {
+                    controller.removeItems { item in
+                        if let item = item as? ChatMessageNotificationItem {
+                            if accountIds.contains(item.context.account.id) {
+                                return true
+                            }
+                            for message in item.messages {
+                                if peerIds.contains(message.id.peerId) {
+                                    return true
+                                }
+                            }
+                        }
+                        return false
+                    }
+                }
+
+                return true
+            })
+
+            if insideInactiveSecretChat {
+                for dismiss in dismissesIfInsideInactiveSecretChat {
+                    dismiss()
+                }
+            }
+
+            CATransaction.commit()
+        }
+
+        // Remove OS Push Notifications
+        if #available(iOS 10.0, *) {
+            UNUserNotificationCenter.current().getDeliveredNotifications(completionHandler: { notifications in
+                var removeIdentifiers: [String] = []
+                for notification in notifications {
+                    if let userInfo = notification.request.content.userInfo as? [String: Any] {
+                        if let accountIdValue = (userInfo["accountId"] as? String).flatMap(Int64.init) ?? (userInfo["accountId"] as? NSNumber)?.int64Value {
+                            let accountId = AccountRecordId(rawValue: accountIdValue)
+                            if accountIds.contains(accountId) {
+                                removeIdentifiers.append(notification.request.identifier)
+                            }
+                        }
+                        if let peerIdValue = (userInfo["peerId"] as? String).flatMap(Int64.init) ?? (userInfo["peerId"] as? NSNumber)?.int64Value {
+                            let peerId = EnginePeer.Id(peerIdValue)
+                            if peerIds.contains(peerId) {
+                                removeIdentifiers.append(notification.request.identifier)
+                            }
+                        }
+                    }
+                }
+                if !removeIdentifiers.isEmpty {
+                    UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: removeIdentifiers)
+                }
+            })
+        }
+    }
+
     public func makeMessagesStatsController(context: AccountContext, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?, messageId: EngineMessage.Id) -> ViewController {
         return messageStatsController(context: context, updatedPresentationData: updatedPresentationData, subject: .message(id: messageId))
     }

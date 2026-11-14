@@ -44,6 +44,7 @@ swift_library(
     ]),
     deps = [
         ":NotificationServiceExtensionLib",
+        "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
         "//submodules/Postbox:Postbox",
         "//submodules/TelegramCore:TelegramCore",
     ],

@@ -7,6 +7,7 @@ import UIKit
 import Intents
 import TelegramPresentationData
 import TelegramUIPreferences
+import ConceptNotifications
 import SwiftSignalKit
 import TelegramCore
 import Display

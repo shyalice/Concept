@@ -3267,7 +3267,11 @@ public func _internal_getMessageNotificationWasDisplayed(transaction: Transactio
     let key = ValueBoxKey(length: 8 + 4)
     key.setInt64(0, value: id.peerId.toInt64())
     key.setInt32(8, value: id.id)
-    return transaction.retrieveItemCacheEntry(id: ItemCacheEntryId(collectionId: Namespaces.CachedItemCollection.displayedMessageNotifications, key: key)) != nil
+    guard let entry = transaction.retrieveItemCacheEntry(id: ItemCacheEntryId(collectionId: Namespaces.CachedItemCollection.displayedMessageNotifications, key: key)) else { return false }
+    if let claim = entry.get(BackgroundNotificationClaim.self) {
+        return claim.expires > Date().timeIntervalSince1970
+    }
+    return true
 }
 
 public func _internal_setMessageNotificationWasDisplayed(transaction: Transaction, id: MessageId) {
