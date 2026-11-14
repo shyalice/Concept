@@ -39,7 +39,7 @@ FMT(i16)
 FMT(label16)
 FMT(npop)
 FMT(npopx)
-FMT(npop_u16)
+FMT(npop_i32)
 FMT(loc)
 FMT(arg)
 FMT(var_ref)
@@ -117,8 +117,8 @@ DEF(      add_brand, 1, 2, 0, none) /* this_obj home_obj -> */
 DEF(   return_async, 1, 1, 0, none)
 DEF(          throw, 1, 1, 0, none)
 DEF(    throw_error, 6, 0, 0, atom_u8)
-DEF(           eval, 5, 1, 1, npop_u16) /* func args... -> ret_val */
-DEF(     apply_eval, 3, 2, 1, u16) /* func array -> ret_eval */
+DEF(           eval, 7, 1, 1, npop_i32) /* func args... -> ret_val; signed scope index */
+DEF(     apply_eval, 5, 2, 1, i32) /* func array -> ret_eval; signed scope index */
 DEF(         regexp, 1, 2, 1, none) /* create a RegExp object from the pattern and a
                                        bytecode string */
 DEF(      get_super, 1, 1, 1, none)

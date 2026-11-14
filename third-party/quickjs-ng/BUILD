@@ -59,6 +59,15 @@ cc_test(
     deps = [":quickjs"],
 )
 
+# Security backports and direct-eval scope regression (VENDOR.md changes 13-14).
+cc_test(
+    name = "QuickJSSecurityTests",
+    srcs = ["tests/quickjs_security_test.c"],
+    data = glob(["tests/security/*.js"]),
+    copts = quickjs_copts,
+    deps = [":quickjs"],
+)
+
 # The sources :quickjs compiles, for WidgetRuntime's no-I/O scan (NoIOScanTests).
 filegroup(
     name = "ScanSources",

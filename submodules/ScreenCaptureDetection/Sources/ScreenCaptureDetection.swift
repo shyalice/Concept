@@ -57,39 +57,13 @@ private func screenRecordingActive() -> Signal<Bool, NoError> {
 // legitimate observers (a chat and a gallery over it) discard the same screenshot.
 private let screenshotRepeatInterval: CFAbsoluteTime = 0.5
 
-private final class ScreenshotNotificationObserver {
-    private var observer: NSObjectProtocol?
-    private var lastTimestamp: CFAbsoluteTime?
-    
-    init(_ f: @escaping () -> Void) {
-        self.observer = NotificationCenter.default.addObserver(forName: UIApplication.userDidTakeScreenshotNotification, object: nil, queue: .main, using: { [weak self] _ in
-            guard let self else {
-                return
-            }
-            let timestamp = CFAbsoluteTimeGetCurrent()
-            if let lastTimestamp = self.lastTimestamp, timestamp - lastTimestamp < screenshotRepeatInterval {
-                return
-            }
-            self.lastTimestamp = timestamp
-            f()
-        })
-    }
-    
-    func clear() {
-        if let observer = self.observer {
-            self.observer = nil
-            NotificationCenter.default.removeObserver(observer)
-        }
-    }
-    
-    deinit {
-        self.clear()
-    }
+private func screenshotObserver(_ action: @escaping () -> Void) -> CaptureNotificationObserver {
+    return CaptureNotificationObserver(name: UIApplication.userDidTakeScreenshotNotification, repeatInterval: screenshotRepeatInterval, action: action)
 }
 
 public func screenCaptureEvents() -> Signal<ScreenCaptureEvent, NoError> {
     return Signal { subscriber in
-        let observer = ScreenshotNotificationObserver({
+        let observer = screenshotObserver({
             subscriber.putNext(.still)
         })
         
@@ -114,14 +88,14 @@ public func screenCaptureEvents() -> Signal<ScreenCaptureEvent, NoError> {
 }
 
 public final class ScreenCaptureDetectionManager {
-    private var observer: ScreenshotNotificationObserver?
+    private var observer: CaptureNotificationObserver?
     private var screenRecordingDisposable: Disposable?
     private var screenRecordingCheckTimer: SwiftSignalKit.Timer?
     
     public var isRecordingActive = false
     
     public init(check: @escaping () -> Bool) {
-        self.observer = ScreenshotNotificationObserver({ [weak self] in
+        self.observer = screenshotObserver({ [weak self] in
             guard let _ = self else {
                 return
             }

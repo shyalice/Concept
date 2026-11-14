@@ -1,5 +1,6 @@
 import Foundation
 import CloudKit
+import CloudDataSupport
 import MtProtoKit
 import SwiftSignalKit
 import EncryptionProvider
@@ -12,7 +13,10 @@ private enum FetchError {
 @available(iOS 10.0, *)
 private func fetchRawData(prefix: String) -> Signal<Data, FetchError> {
     return Signal { subscriber in
-        let container = CKContainer.default()
+        guard let container = CloudDataDefaultContainer() else {
+            subscriber.putError(.generic)
+            return EmptyDisposable
+        }
         let publicDatabase = container.database(with: .public)
         let recordId = CKRecord.ID(recordName: "emergency-datacenter-\(prefix)")
         publicDatabase.fetch(withRecordID: recordId, completionHandler: { record, error in

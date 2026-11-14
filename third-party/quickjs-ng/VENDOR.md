@@ -296,3 +296,42 @@ Re-apply these after upgrading; `git diff 55b3934a98 -- third-party/quickjs-ng/q
     - Pinned by `tests/quickjs_host_test.c`, `test_dumps_never_follow_ndebug`: in the suite's default build (no
       `NDEBUG`) `JS_SetDumpFlags(rt, ~0)` keeps nothing and `JS_GetDumpFlags` answers 0, which is what both do with the
       dumps compiled out. Before the change it answered the 24 bits of the flags field (the RED run).
+
+13. **Security backports from TelegramMessenger/quickjs** (2026-11-13).
+    Reviewed against upstream master `b526a817f188ef861eea7666d68361c7851673a0` (2026-11-10).
+    This is a backport onto the existing host fork, preserving changes 3–10 and 12.
+    Source: https://github.com/TelegramMessenger/quickjs/commits/b526a817f188ef861eea7666d68361c7851673a0
+    - `2dfeee3e68cd3c7fb5f0790684ae43b663f01bd4`: Free partial BigInts when deserialization fails.
+    - `ebd139b86386101bbe13e083c10f74bf46a94ddf`: Detach WeakMap references before freeing values.
+    - `b06baf9ced0421a105c4d3000b98f5dea169eeab`: Use internal calls for Array.fromAsync callbacks.
+    - `f4fe478aa9d1dc5fbb6e44aca4e283502e41c6fd`: Register deserialized RegExp object references.
+    - `2b62af194afa1c0779b0ad7cd4b28b339c635c05`: Keep RegExp bytecode valid after lastIndex coercion.
+    - `f4dd1647e8a713354ccbf186578776ebd116c3d7`: Clear Array.find value ownership after release.
+    - `9184c7293f3e8c02c81904473b52254eddf62f93`: Propagate push_scope() allocation failures in the parser.
+    - `a11af6532657d2ece10230b961342cd1ce05b758`: Reject a negative scope_level in add_scope_var() and pop_scope().
+    - `b02310a11877829888888d67003a0de2eb927989`: Fix some more possible crashes..
+    - `7ca4ac52a862e307b81d97319b1f31382d823beb`: Fix UAF in FinalizationRegistry.prototype.unregister().
+    - `3ad65ada33124cb975e89163f9b53c6bf446e421`: Fix UAF in Map.prototype.clear() with iterator values.
+    - `45c5b9b734a30f8f61a06c434e6a8c9aceee334f`: Fix abort in reset_weak_ref() with a WeakRef as WeakMap value.
+    - `3e236cb0ac077fbf47ca1ae500978964f90a3d47`: Fix out-of-bounds read in direct eval with too many closure variables.
+    - `8f0d3b6193a01bda29d69b0cab4f03320bcaa027`: Fix out-of-bounds read in mapped arguments with too many captured variables.
+    - `ca3594dae5fd0dd6d667be74a322e8e935a2d217`: Refuse `await using` in a for head outside async functions.
+    - `53dd88473e68d1859553d009e9aa311e3db3b926`: Fix Unicode script cleanup after allocation failure.
+    Pinned by `:QuickJSSecurityTests`, including six unchanged upstream JavaScript regressions
+    from that revision in `tests/security/`, plus the upstream ten-case await-using parser matrix.
+    Upstream test source and license: https://github.com/TelegramMessenger/quickjs/tree/b526a817f188ef861eea7666d68361c7851673a0/tests
+
+14. **Preserve empty argument scopes in direct eval** (2026-11-13, Concept).
+    `ARG_SCOPE_END` (-2) was encoded as an unsigned 16-bit `first + 1`, becoming
+    a local index of 65534 on evaluation. Empty destructuring defaults in strict functions
+    and arrows could therefore read outside `vardefs`. The upstream patches in change 13
+    did not address this independent path. Both `eval` and spread `apply_eval` now carry
+    the raw signed 32-bit scope index; the compiler, interpreter, stack analysis and dump
+    metadata agree on its width. Direct-eval scope operands and linked indices are checked
+    before accessing `vardefs`, including a bound on traversal. Bytecode version advances
+    from 28 to 29, rejecting previous cached blobs. No precompiled app bundles ship (above).
+    `:QuickJSSecurityTests` checks TypeError for non-iterable destructuring, valid array/object
+    defaults, spread eval, arrows, parameter visibility, body-local isolation, a bytecode
+    round trip and rejection of an earlier version header. The minimal regression crashes
+    under ASan before the fix; after it the security, smoke and custom-host suites pass
+    under ASan + UBSan. These are host engine checks, not an assertion about all widget code.
