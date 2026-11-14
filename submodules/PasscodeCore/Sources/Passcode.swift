@@ -482,6 +482,26 @@ public final class PasscodeCredentialStore: @unchecked Sendable {
         try self.serialized { Int(max(0, min(60, ceil(try self.attempts().deadline - self.clock().uptime)))) }
     }
 
+    /// Authorizes only an alternative app-lock code. It never returns an access
+    /// key or a settings/wallet session, and observes the primary credential's
+    /// shared lockout. The caller must verify the primary code if this returns false.
+    public func verifyAlternativeAppUnlock(reference: PasscodeCredentialReference?, validate: () -> Bool) throws -> Bool {
+        return try self.serialized {
+            guard let record = try self.load(), record.kind != nil else {
+                throw PasscodeError.authenticationRequired
+            }
+            if let reference, reference.id != record.id {
+                throw PasscodeError.staleAuthorization
+            }
+            let attempts = try self.attempts()
+            let remaining = Int(max(0, min(60, ceil(attempts.deadline - self.clock().uptime))))
+            guard remaining == 0 else { throw PasscodeError.cooldown(remaining) }
+            guard validate() else { return false }
+            try self.storage.remove("attempts")
+            return true
+        }
+    }
+
     public func verify(_ code: String, reference: PasscodeCredentialReference? = nil, scope: PasscodeSession.Scope, lifetime: PasscodeSession.Lifetime = .standard) throws -> PasscodeSession {
         if case let .resource(namespace) = scope, namespace.isEmpty { throw PasscodeError.authenticationRequired }
         if lifetime == .ownerManaged {

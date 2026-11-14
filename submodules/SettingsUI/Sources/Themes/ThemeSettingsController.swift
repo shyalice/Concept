@@ -1140,11 +1140,11 @@ public func themeSettingsController(context: AccountContext, focusOnItemTag: The
             SharedDataKeys.chatThemes,
             ApplicationSpecificSharedDataKeys.sgStatus // MARK: Swiftgram
         ]),
-        cloudThemes.get(),
+        .single([]) |> then(cloudThemes.get()),
         availableAppIcons,
         currentAppIconName.get(),
         removedThemeIndexesPromise.get(),
-        animatedEmojiStickers,
+        .single([:]) |> then(animatedEmojiStickers),
         context.account.postbox.peerView(id: context.account.peerId),
         context.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId))
     )

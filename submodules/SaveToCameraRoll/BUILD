@@ -15,6 +15,11 @@ swift_library(
         "//submodules/Display:Display",
         "//submodules/AccountContext:AccountContext",
         "//submodules/DeviceAccess:DeviceAccess",
+        "//submodules/TelegramPresentationData:TelegramPresentationData",
+        "//submodules/PresentationDataUtils:PresentationDataUtils",
+        "//submodules/TelegramUI/Components/AlertComponent:AlertComponent",
+        "//submodules/ComponentFlow:ComponentFlow",
+        "//Swiftgram/SGStrings:SGStrings",
         "//submodules/LegacyComponents:LegacyComponents",
     ],
     visibility = [

@@ -148,11 +148,15 @@ class HistoryNodeContainer: ASDisplayNode {
     var isSecret: Bool {
         didSet {
             if self.isSecret != oldValue {
-                setLayerDisableScreenshots(self.layer, self.isSecret)
+                self.updateCaptureProtection()
             }
         }
     }
     
+    func updateCaptureProtection() {
+        setLayerDisableScreenshots(self.layer, self.isSecret && !MiscSettingsManager.shared.shouldBypassScreenshotProtection)
+    }
+
     var contentNode: ASDisplayNode {
         return self
     }
@@ -163,7 +167,8 @@ class HistoryNodeContainer: ASDisplayNode {
         super.init()
         
         if self.isSecret {
-            setLayerDisableScreenshots(self.layer, self.isSecret)
+            let shouldDisable = self.isSecret && !MiscSettingsManager.shared.shouldBypassScreenshotProtection
+            setLayerDisableScreenshots(self.layer, shouldDisable)
         }
     }
 }
@@ -355,6 +360,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
     var dismissUrlPreview: () -> Void = { }
     var setupSendActionOnViewUpdate: (@escaping () -> Void, Int64?) -> Void = { _, _ in }
     var requestLayout: (ContainedViewLayoutTransition) -> Void = { _ in }
+    private var miscSettingsObserver: NSObjectProtocol?
     var dismissAsOverlay: () -> Void = { }
     
     var interfaceInteraction: ChatPanelInterfaceInteraction?
@@ -521,7 +527,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
         
         self.floatingTopicsPanelContainer = ChatControllerTitlePanelNodeContainer()
         
-        setLayerDisableScreenshots(self.titleAccessoryPanelContainer.layer, chatLocation.peerId?.namespace == Namespaces.Peer.SecretChat)
+        setLayerDisableScreenshots(self.titleAccessoryPanelContainer.layer, chatLocation.peerId?.namespace == Namespaces.Peer.SecretChat && !MiscSettingsManager.shared.shouldBypassScreenshotProtection)
         
         self.inputContextPanelContainer = ChatControllerTitlePanelNodeContainer()
         self.inputContextOverTextPanelContainer = ChatControllerTitlePanelNodeContainer()
@@ -1093,6 +1099,9 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
     }
     
     deinit {
+        if let miscSettingsObserver = self.miscSettingsObserver {
+            NotificationCenter.default.removeObserver(miscSettingsObserver)
+        }
         self.interactiveEmojisDisposable?.dispose()
         self.openStickersDisposable?.dispose()
         self.displayVideoUnmuteTipDisposable?.dispose()
@@ -1103,6 +1112,12 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
     
     override func didLoad() {
         super.didLoad()
+
+        self.miscSettingsObserver = NotificationCenter.default.addObserver(forName: MiscSettingsManager.settingsChangedNotification, object: nil, queue: .main) { [weak self] _ in
+            guard let self else { return }
+            self.historyNodeContainer.updateCaptureProtection()
+            self.requestLayout(.immediate)
+        }
         
         let recognizer = WindowPanRecognizer(target: nil, action: nil)
         recognizer.cancelsTouchesInView = false
@@ -1327,15 +1342,18 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
             }
         }
         
-        let isSecret = self.chatPresentationInterfaceState.copyProtectionEnabled || self.chatLocation.peerId?.namespace == Namespaces.Peer.SecretChat || self.chatLocation.peerId?.isVerificationCodes == true
+        let effectiveCopyProtection = MiscSettingsManager.shared.shouldBypassScreenshotProtection ? false : self.chatPresentationInterfaceState.copyProtectionEnabled
+        let isSecret = effectiveCopyProtection || self.chatLocation.peerId?.namespace == Namespaces.Peer.SecretChat || self.chatLocation.peerId?.isVerificationCodes == true
         if self.historyNodeContainer.isSecret != isSecret {
             #if DEBUG
             self.historyNodeContainer.isSecret = false
             #else
             self.historyNodeContainer.isSecret = isSecret
             #endif
-            setLayerDisableScreenshots(self.titleAccessoryPanelContainer.layer, isSecret)
         }
+        // The settings toggle can change without changing the chat's identity.
+        self.historyNodeContainer.updateCaptureProtection()
+        setLayerDisableScreenshots(self.titleAccessoryPanelContainer.layer, isSecret && !MiscSettingsManager.shared.shouldBypassScreenshotProtection)
 
         var previousListBottomInset: CGFloat?
         if !self.historyNode.frame.isEmpty {

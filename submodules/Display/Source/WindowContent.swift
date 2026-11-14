@@ -293,9 +293,11 @@ public final class WindowHostView {
     /// Multi-display devices only: the fold while the system reports it active, in `eventView`
     /// coordinates. Nil before iOS 27.1.
     fileprivate var activeDivision: CGRect? {
+        #if compiler(>=6.4)
         if #available(iOS 27.1, *) {
             return self.eventView.reservedRegions(kind: .division).first(where: \.isActive)?.frame
         }
+        #endif
         return nil
     }
     
@@ -491,10 +493,12 @@ public class Window1 {
     public init(hostView: WindowHostView, statusBarHost: StatusBarHost?) {
         self.hostView = hostView
         self.badgeView = UIImageView()
-        if SGSimpleSettings.shared.status > 1, let image = UIImage(bundleImageName: SGSimpleSettings.shared.customAppBadge) {
+        if SGSimpleSettings.shared.customAppBadge == "HiddenAppBadge" {
+            self.badgeView.image = nil
+        } else if let image = UIImage(bundleImageName: SGSimpleSettings.shared.customAppBadge) {
             self.badgeView.image = image
         } else {
-        self.badgeView.image = UIImage(bundleImageName: "Components/AppBadge")
+            self.badgeView.image = UIImage(bundleImageName: "Components/AppBadge")
         }
         self.badgeView.isHidden = true
         
@@ -1513,9 +1517,19 @@ public class Window1 {
                     coveringView.updateLayout(self.windowLayout.size)
                 }
                 
+                if SGSimpleSettings.shared.customAppBadge == "HiddenAppBadge" {
+                    self.badgeView.image = nil
+                } else if let image = UIImage(bundleImageName: SGSimpleSettings.shared.customAppBadge) {
+                    self.badgeView.image = image
+                } else {
+                    self.badgeView.image = UIImage(bundleImageName: "Components/AppBadge")
+                }
+
                 if let image = self.badgeView.image {
                     self.updateBadgeVisibility()
                     self.badgeView.frame = CGRect(origin: CGPoint(x: floorToScreenPixels((self.windowLayout.size.width - image.size.width) / 2.0), y: self.deviceMetrics.sgAppBadgeOffset()), size: image.size)
+                } else {
+                    self.badgeView.isHidden = true
                 }
             }
         }

@@ -28,17 +28,7 @@ final class PasscodeSetupControllerNode: ASDisplayNode {
 
     private var displaysCustomKeyboard: Bool {
         guard self.useCustomNumericKeyboard else { return false }
-        switch self.mode {
-        case let .setup(_, type):
-            return type != .alphanumeric
-        case let .entry(challenge):
-            switch challenge.passcodeKind {
-            case .digits4, .digits6:
-                return true
-            default:
-                return false
-            }
-        }
+        return self.mode.fieldType != .alphanumeric
     }
     
     private let wrapperNode: ASDisplayNode
@@ -55,6 +45,7 @@ final class PasscodeSetupControllerNode: ASDisplayNode {
     
     var selectPasscodeMode: ((HighlightableButtonNode) -> Void)?
     var checkPasscode: ((String) -> Void)?
+    var validatePasscode: ((String) -> String?)?
     var complete: ((String, Bool) -> Void)?
     var updateNextAction: ((Bool) -> Void)?
     
@@ -78,18 +69,8 @@ final class PasscodeSetupControllerNode: ASDisplayNode {
         self.subtitleNode.isUserInteractionEnabled = false
         self.subtitleNode.displaysAsynchronously = false
         
-        let passcodeType: PasscodeEntryFieldType
-        switch self.mode {
-            case let .entry(challenge):
-                switch challenge.passcodeKind {
-                case .digits4: passcodeType = .digits4
-                case .digits6: passcodeType = .digits6
-                default: passcodeType = .alphanumeric
-                }
-            case let .setup(_, type):
-                passcodeType = type
-        }
-        
+        let passcodeType = self.mode.fieldType
+
         self.inputFieldNode = PasscodeInputFieldNode(color: self.presentationData.theme.list.itemPrimaryTextColor, accentColor: self.presentationData.theme.list.itemAccentColor, fieldType: passcodeType, keyboardAppearance: self.presentationData.theme.rootController.keyboardColor.keyboardAppearance, useCustomNumpad: self.useCustomNumericKeyboard && passcodeType != .alphanumeric, fieldBackgroundColor: self.presentationData.theme.list.itemBlocksBackgroundColor)
         
         self.modeButtonNode = HighlightableButtonNode()
@@ -116,7 +97,11 @@ final class PasscodeSetupControllerNode: ASDisplayNode {
             case .entry:
                 self.modeButtonNode.isHidden = true
                 self.modeButtonNode.isAccessibilityElement = false
-                text = self.presentationData.strings.EnterPasscode_EnterPasscode.replacingOccurrences(of: "Telegram", with: "Swiftgram") /* MARK: Swiftgram */
+                text = self.presentationData.strings.EnterPasscode_EnterPasscode.replacingOccurrences(of: "Telegram", with: "Concept") /* MARK: Swiftgram */
+            case .secretEntry:
+                text = self.presentationData.strings.EnterPasscode_EnterPasscode.replacingOccurrences(of: "Telegram", with: "Concept")
+            case .secretSetup:
+                text = self.presentationData.strings.EnterPasscode_EnterNewPasscodeNew
             case let .setup(change, _):
                 if change {
                     text = self.presentationData.strings.EnterPasscode_EnterNewPasscodeChange
@@ -181,18 +166,7 @@ final class PasscodeSetupControllerNode: ASDisplayNode {
         let title = self.titleNode.attributedText?.string
         // An alphanumeric passcode is typed into a visible field, which the prompt labels; a digit passcode shows only
         // dots (the field is invisible), so the prompt is read as text before the keypad.
-        var isAlphanumeric = false
-        switch self.mode {
-        case let .entry(challenge):
-            switch challenge.passcodeKind {
-            case .digits4, .digits6:
-                isAlphanumeric = false
-            default:
-                isAlphanumeric = true
-            }
-        case let .setup(_, type):
-            isAlphanumeric = type == .alphanumeric
-        }
+        let isAlphanumeric = self.mode.fieldType == .alphanumeric
         self.titleNode.isAccessibilityElement = !isAlphanumeric && !(title ?? "").isEmpty
         self.titleNode.accessibilityLabel = title
         self.titleNode.accessibilityTraits = [.staticText]
@@ -309,7 +283,8 @@ final class PasscodeSetupControllerNode: ASDisplayNode {
         self.mode = mode
         self.inputFieldNode.reset()
         
-        if case let .setup(_, type) = mode {
+        if self.mode.canSelectFieldType {
+            let type = mode.fieldType
             self.inputFieldNode.updateFieldType(type, animated: true, useCustomNumpad: self.displaysCustomKeyboard)
             
             if case .alphanumeric = type {
@@ -329,7 +304,7 @@ final class PasscodeSetupControllerNode: ASDisplayNode {
         if self.useCustomNumericKeyboard && !self.isCustomInputActive {
             return
         }
-        if case let .setup(_, type) = self.mode, let maxLength = type.maxLength, self.currentPasscode.count != maxLength {
+        if let maxLength = self.mode.fieldType.maxLength, self.currentPasscode.count != maxLength {
             return
         }
         (self.keyboard.view as? WalletSendKeyboardComponent.View)?.cancelKeyPresses()
@@ -339,18 +314,22 @@ final class PasscodeSetupControllerNode: ASDisplayNode {
         }
         
         switch self.mode {
-            case .entry:
+            case .entry, .secretEntry:
                 self.checkPasscode?(self.currentPasscode)
-            case .setup:
+            case .setup, .secretSetup:
+                if let error = self.validatePasscode?(self.currentPasscode) {
+                    self.animateError()
+                    self.subtitleNode.isHidden = false
+                    self.subtitleNode.attributedText = NSAttributedString(string: error, font: Font.regular(16.0), textColor: self.presentationData.theme.list.itemPrimaryTextColor)
+                    if let validLayout = self.validLayout {
+                        self.containerLayoutUpdated(validLayout.0, navigationBarHeight: validLayout.1, transition: .immediate)
+                    }
+                    UIAccessibility.post(notification: .announcement, argument: error)
+                    return
+                }
                 if let previousPasscode = self.previousPasscode {
                     if self.currentPasscode == previousPasscode {
-                        var numerical = false
-                        if case let .setup(_, type) = mode {
-                            if case .alphanumeric = type {
-                            } else {
-                                numerical = true
-                            }
-                        }
+                        let numerical = self.mode.fieldType != .alphanumeric
                         self.complete?(self.currentPasscode, numerical)
                     } else {
                         self.previousPasscode = nil

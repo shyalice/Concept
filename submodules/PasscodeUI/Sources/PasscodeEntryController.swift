@@ -50,6 +50,7 @@ public final class PasscodeEntryController: ViewController {
     private var presentationData: PresentationData
     private var presentationDataDisposable: Disposable?
         
+    private let alternativePasscodes: [String]
     private let challengeData: PostboxAccessChallengeData
     private let authenticationScope: PasscodeSession.Scope
     private let authenticationLifetime: PasscodeSession.Lifetime
@@ -71,6 +72,7 @@ public final class PasscodeEntryController: ViewController {
     private var navigationRemovalCompleted: (() -> Void)?
     private var isPasscodeLocked = false
     private let credentialLockDisposable = MetaDisposable()
+    private let conceptUnlockDisposable = MetaDisposable()
     
     private let biometricsDisposable = MetaDisposable()
     private let biometricAuthenticationDisposable = MetaDisposable()
@@ -80,13 +82,14 @@ public final class PasscodeEntryController: ViewController {
     
     private var inBackgroundDisposable: Disposable?
     
-    public init(applicationBindings: TelegramApplicationBindings, accountManager: AccountManager<TelegramAccountManagerTypes>, appLockContext: AppLockContext, presentationData: PresentationData, presentationDataSignal: Signal<PresentationData, NoError>, statusBarHost: StatusBarHost?, challengeData: PostboxAccessChallengeData, biometrics: PasscodeEntryControllerBiometricsMode, arguments: PasscodeEntryControllerPresentationArguments, authenticationScope: PasscodeSession.Scope = .appUnlock, authenticationLifetime: PasscodeSession.Lifetime = .standard, biometricReason: String = "", authenticateBiometrics: ((LAContext) throws -> PasscodeSession)? = nil) {
+    public init(applicationBindings: TelegramApplicationBindings, accountManager: AccountManager<TelegramAccountManagerTypes>, appLockContext: AppLockContext, presentationData: PresentationData, presentationDataSignal: Signal<PresentationData, NoError>, statusBarHost: StatusBarHost?, challengeData: PostboxAccessChallengeData, biometrics: PasscodeEntryControllerBiometricsMode, arguments: PasscodeEntryControllerPresentationArguments, authenticationScope: PasscodeSession.Scope = .appUnlock, alternativePasscodes: [String] = [], authenticationLifetime: PasscodeSession.Lifetime = .standard, biometricReason: String = "", authenticateBiometrics: ((LAContext) throws -> PasscodeSession)? = nil) {
         self.applicationBindings = applicationBindings
         self.accountManager = accountManager
         self.appLockContext = appLockContext
         self.presentationData = presentationData
         self.presentationDataSignal = presentationDataSignal
         self.challengeData = challengeData
+        self.alternativePasscodes = alternativePasscodes
         self.authenticationScope = authenticationScope
         self.authenticationLifetime = authenticationLifetime
         self.biometricReason = biometricReason
@@ -145,6 +148,7 @@ public final class PasscodeEntryController: ViewController {
         self.biometricAuthenticationDisposable.dispose()
         self.inBackgroundDisposable?.dispose()
         self.credentialLockDisposable.dispose()
+        self.conceptUnlockDisposable.dispose()
         self.authenticationLifecycle.dismiss()
         self.authenticationContext?.invalidate()
         let cancelled = self.arguments.cancel
@@ -157,11 +161,18 @@ public final class PasscodeEntryController: ViewController {
     }
     
     override public func loadDisplayNode() {
-        let passcodeType: PasscodeEntryFieldType
+        var passcodeType: PasscodeEntryFieldType
         switch self.challengeData.passcodeKind {
         case .digits4: passcodeType = .digits4
         case .digits6: passcodeType = .digits6
         default: passcodeType = .alphanumeric
+        }
+        if self.authenticationScope == .appUnlock {
+            let length: Int?
+            switch self.challengeData.passcodeKind { case .digits4: length = 4; case .digits6: length = 6; default: length = nil }
+            if let length, self.alternativePasscodes.contains(where: { code in code.utf8.count != length || !code.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }) }) {
+                passcodeType = .alphanumeric
+            }
         }
         let biometricsType: LocalAuthBiometricAuthentication?
         if case let .enabled(data) = self.biometrics {
@@ -229,6 +240,11 @@ public final class PasscodeEntryController: ViewController {
         }
     }
 
+    private enum CodeVerification {
+        case primary(PasscodeSession)
+        case conceptSecret(String)
+    }
+
     private func verifyCode(_ code: String) {
         guard !self.checkingCode, self.authenticationLifecycle.canAuthenticate else { return }
         self.checkingCode = true
@@ -239,56 +255,104 @@ public final class PasscodeEntryController: ViewController {
         let challenge = self.challengeData
         let scope = self.authenticationScope
         let lifetime = self.authenticationLifetime
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let result: Result<PasscodeSession, Error> = Result {
-                switch challenge {
-                case let .numericalPassword(value):
-                    _ = try PasscodeCredentialStore.shared.migrateLegacy(code: value, kind: value.count == 6 ? .digits6 : .digits4)
-                case let .plaintextPassword(value):
-                    _ = try PasscodeCredentialStore.shared.migrateLegacy(code: value, kind: .alphanumeric)
-                case .none, .secured: break
+        // Secondary Concept codes open only the app-lock screen. They cannot
+        // authorize settings changes, passcode management or protected resources.
+        let allowsConceptCode = self.applicationBindings.isMainApp && self.arguments.displayAppLock
+            && scope == .appUnlock && self.authenticated == nil && self.completed == nil
+        let perform: (ConceptSecretPasscodes?) -> Void = { [weak self] secretPasscodes in
+            guard let self, self.authenticationLifecycle.acceptsResult(generation: generation) else { return }
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let result: Result<CodeVerification, Error> = Result {
+                    switch challenge {
+                    case let .numericalPassword(value):
+                        _ = try PasscodeCredentialStore.shared.migrateLegacy(code: value, kind: value.count == 6 ? .digits6 : .digits4)
+                    case let .plaintextPassword(value):
+                        _ = try PasscodeCredentialStore.shared.migrateLegacy(code: value, kind: .alphanumeric)
+                    case .none, .secured: break
+                    }
+                    let reference = passcodeCredentialReference(from: challenge)
+                    if allowsConceptCode, let secretPasscodes,
+                       try PasscodeCredentialStore.shared.verifyAlternativeAppUnlock(reference: reference, validate: {
+                           secretPasscodes.secretPasscodes.contains(where: { $0.passcode == code })
+                       }) {
+                        return .conceptSecret(code)
+                    }
+                    return .primary(try PasscodeCredentialStore.shared.verify(code, reference: reference, scope: scope, lifetime: lifetime))
                 }
-                let reference = passcodeCredentialReference(from: challenge)
-                return try PasscodeCredentialStore.shared.verify(code, reference: reference, scope: scope, lifetime: lifetime)
-            }
-            DispatchQueue.main.async {
-                guard let self, self.authenticationLifecycle.acceptsResult(generation: generation) else {
-                    if case let .success(session) = result { session.invalidate() }
-                    return
-                }
-                self.checkingCode = false
-                self.controllerNode.isUserInteractionEnabled = true
-                switch result {
-                case let .success(session):
-                    if self.authenticated != nil {
-                        self.finishAuthentication(.success(session))
-                    } else {
-                        session.invalidate()
-                        if self.completed != nil {
-                            self.finishAuthentication(.success(nil))
+                DispatchQueue.main.async {
+                    guard let self, self.authenticationLifecycle.acceptsResult(generation: generation) else {
+                        if case let .success(.primary(session)) = result { session.invalidate() }
+                        return
+                    }
+                    self.checkingCode = false
+                    self.controllerNode.isUserInteractionEnabled = true
+                    switch result {
+                    case let .success(.primary(session)):
+                        if self.authenticated != nil {
+                            self.finishAuthentication(.success(session))
                         } else {
-                            self.appLockContext.unlock()
+                            session.invalidate()
+                            if self.completed != nil {
+                                self.finishAuthentication(.success(nil))
+                            } else {
+                                self.appLockContext.unlock()
+                            }
+                            let isMainApp = self.applicationBindings.isMainApp
+                            let _ = updatePresentationPasscodeSettingsInteractively(accountManager: self.accountManager, { settings in
+                                isMainApp ? settings.withUpdatedBiometricsDomainState(LocalAuth.evaluatedPolicyDomainState) : settings.withUpdatedShareBiometricsDomainState(LocalAuth.evaluatedPolicyDomainState)
+                            }).start()
                         }
-                        let isMainApp = self.applicationBindings.isMainApp
-                        let _ = updatePresentationPasscodeSettingsInteractively(accountManager: self.accountManager, { settings in
-                            isMainApp ? settings.withUpdatedBiometricsDomainState(LocalAuth.evaluatedPolicyDomainState) : settings.withUpdatedShareBiometricsDomainState(LocalAuth.evaluatedPolicyDomainState)
-                        }).start()
-                    }
-                case let .failure(error):
-                    switch error as? PasscodeError ?? .unavailable {
-                    case .invalidCode:
-                        self.controllerNode.animateError()
-                        self.controllerNode.announceIncorrectPasscode()
-                        self.refreshCredentialCooldown()
-                    case let .cooldown(remaining):
-                        self.controllerNode.resetInput()
-                        self.updateCredentialCooldown(remaining)
-                    default:
-                        self.controllerNode.resetInput()
-                        self.controllerNode.updateCredentialError(true)
+                    case let .success(.conceptSecret(passcode)):
+                        self.checkingCode = true
+                        self.controllerNode.isUserInteractionEnabled = false
+                        self.conceptUnlockDisposable.set((self.accountManager.transaction { transaction -> Bool in
+                            var activated = false
+                            transaction.updateSharedData(SharedDataKeys.conceptSecretPasscodes, { entry in
+                                let settings = entry?.get(ConceptSecretPasscodes.self) ?? .defaultSettings
+                                guard let index = settings.secretPasscodes.firstIndex(where: { $0.passcode == passcode }) else {
+                                    return entry
+                                }
+                                var passcodes = settings.secretPasscodes
+                                passcodes[index] = passcodes[index].withUpdated(active: true)
+                                activated = true
+                                return EnginePreferencesEntry(ConceptSecretPasscodes(secretPasscodes: passcodes, dbCoveringAccounts: settings.dbCoveringAccounts, cacheCoveringAccounts: settings.cacheCoveringAccounts))
+                            })
+                            return activated
+                        } |> deliverOnMainQueue).start(next: { [weak self] activated in
+                            guard let self, self.authenticationLifecycle.acceptsResult(generation: generation) else { return }
+                            self.checkingCode = false
+                            self.controllerNode.isUserInteractionEnabled = true
+                            if activated {
+                                self.appLockContext.unlock()
+                            } else {
+                                self.controllerNode.animateError()
+                            }
+                        }))
+                    case let .failure(error):
+                        switch error as? PasscodeError ?? .unavailable {
+                        case .invalidCode:
+                            self.controllerNode.animateError()
+                            self.controllerNode.announceIncorrectPasscode()
+                            self.refreshCredentialCooldown()
+                        case let .cooldown(remaining):
+                            self.controllerNode.resetInput()
+                            self.updateCredentialCooldown(remaining)
+                        default:
+                            self.controllerNode.resetInput()
+                            self.controllerNode.updateCredentialError(true)
+                        }
                     }
                 }
             }
+        }
+        if allowsConceptCode {
+            self.conceptUnlockDisposable.set((self.accountManager.sharedData(keys: [SharedDataKeys.conceptSecretPasscodes])
+            |> take(1)
+            |> deliverOnMainQueue).start(next: { sharedData in
+                perform(sharedData.entries[SharedDataKeys.conceptSecretPasscodes]?.get(ConceptSecretPasscodes.self) ?? .defaultSettings)
+            }))
+        } else {
+            perform(nil)
         }
     }
 
@@ -419,7 +483,7 @@ public final class PasscodeEntryController: ViewController {
         let biometricAuthentication = self.appLockContext.beginBiometricAuthentication()
         self.biometricAuthenticationDisposable.set(biometricAuthentication)
         
-        self.biometricsDisposable.set((LocalAuth.auth(reason: self.presentationData.strings.EnterPasscode_TouchId.replacingOccurrences(of: "Telegram", with: "Swiftgram") /* MARK: Swiftgram */) |> deliverOnMainQueue).start(next: { [weak self] result, evaluatedPolicyDomainState in
+        self.biometricsDisposable.set((LocalAuth.auth(reason: self.presentationData.strings.EnterPasscode_TouchId.replacingOccurrences(of: "Telegram", with: "Concept") /* MARK: Swiftgram */) |> deliverOnMainQueue).start(next: { [weak self] result, evaluatedPolicyDomainState in
             biometricAuthentication.dispose()
             guard let strongSelf = self, strongSelf.authenticationLifecycle.acceptsResult(generation: generation) else {
                 return

@@ -1479,6 +1479,7 @@ model::Repeater *LottieParserImpl::parseReapeaterObject()
             } else {
                 maxCopy = obj->mCopies.value();
             }
+            if (maxCopy > 1000.0f) maxCopy = 1000.0f;
             obj->mMaxCopies = maxCopy;
         } else if (0 == strcmp(key, "o")) {
             parseProperty(obj->mOffset);

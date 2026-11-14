@@ -140,6 +140,8 @@ private var declaredEncodables: Void = {
     declareEncodable(SourceReferenceMessageAttribute.self, f: { SourceReferenceMessageAttribute(decoder: $0) })
     declareEncodable(SourceAuthorInfoMessageAttribute.self, f: { SourceAuthorInfoMessageAttribute(decoder: $0) })
     declareEncodable(EditedMessageAttribute.self, f: { EditedMessageAttribute(decoder: $0) })
+    declareEncodable(DeletedMessageAttribute.self, f: { DeletedMessageAttribute(decoder: $0) })
+    declareEncodable(ConceptEditHistoryMessageAttribute.self, f: { ConceptEditHistoryMessageAttribute(decoder: $0) })
     declareEncodable(ReplyMarkupMessageAttribute.self, f: { ReplyMarkupMessageAttribute(decoder: $0) })
     declareEncodable(OutgoingChatContextResultMessageAttribute.self, f: { OutgoingChatContextResultMessageAttribute(decoder: $0) })
     declareEncodable(HttpReferenceMediaResource.self, f: { HttpReferenceMediaResource(decoder: $0) })
@@ -320,7 +322,7 @@ public func currentAccount(allocateIfNotExists: Bool, networkArguments: NetworkI
                         return false
                     }
                 })
-                return accountWithId(accountManager: manager, networkArguments: networkArguments, id: record.0, encryptionParameters: encryptionParameters, supplementary: supplementary, isSupportUser: isSupportUser, rootPath: rootPath, beginWithTestingEnvironment: beginWithTestingEnvironment, backupData: nil, auxiliaryMethods: auxiliaryMethods)
+                return accountWithId(accountManager: manager, networkArguments: networkArguments, id: record.0, encryptionParameters: encryptionParameters, supplementary: supplementary, isSupportUser: isSupportUser, rootPath: rootPath, beginWithTestingEnvironment: beginWithTestingEnvironment, backupData: nil, auxiliaryMethods: auxiliaryMethods, initialPeerIdsExcludedFromUnreadCounters: [])
                 |> mapToSignal { accountResult -> Signal<AccountResult?, NoError> in
                     let postbox: Postbox
                     let initialKind: AccountKind
@@ -497,7 +499,7 @@ private func cleanupAccount(networkArguments: NetworkInitializationArguments, ac
             return false
         }
     })
-    return accountWithId(accountManager: accountManager, networkArguments: networkArguments, id: id, encryptionParameters: encryptionParameters, supplementary: true, isSupportUser: isSupportUser, rootPath: rootPath, beginWithTestingEnvironment: beginWithTestingEnvironment, backupData: nil, auxiliaryMethods: auxiliaryMethods)
+    return accountWithId(accountManager: accountManager, networkArguments: networkArguments, id: id, encryptionParameters: encryptionParameters, supplementary: true, isSupportUser: isSupportUser, rootPath: rootPath, beginWithTestingEnvironment: beginWithTestingEnvironment, backupData: nil, auxiliaryMethods: auxiliaryMethods, initialPeerIdsExcludedFromUnreadCounters: [])
     |> mapToSignal { account -> Signal<Void, NoError> in
         switch account {
             case .upgrading:

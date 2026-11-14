@@ -1,4 +1,5 @@
 import SGSimpleSettings // MARK: Swiftgram
+import ConceptBadges
 import Foundation
 import UIKit
 import AsyncDisplayKit
@@ -1464,6 +1465,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
         }
     }
     
+    private let conceptBadgeView = ConceptBadgeView()
     public private(set) var item: ChatListItem?
     
     private let backgroundNode: ASDisplayNode
@@ -4098,7 +4100,15 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                 titleAttributedString = NSAttributedString(string: " ", font: titleFont, textColor: theme.titleColor)
             }
                         
-            var titleRectWidth = rawContentWidth - dateLayout.size.width - 10.0 - statusWidth - titleIconsWidth - titleLeftOffset
+            let conceptPeerKey: String?
+            if case let .chat(itemPeer) = contentPeer, let peer = itemPeer.chatOrMonoforumMainPeer,
+               peer.id != item.context.account.peerId,
+               !peer.isFake, !peer.isScam {
+                conceptPeerKey = peer.id.conceptBadgeKey
+            } else { conceptPeerKey = nil }
+            let conceptHasBadge = conceptPeerKey.flatMap { ConceptBadgeService.shared.badge(peerId: $0) } != nil
+            let conceptBadgeWidth: CGFloat = conceptHasBadge ? 20 : 0
+            var titleRectWidth = rawContentWidth - dateLayout.size.width - 10.0 - statusWidth - titleIconsWidth - titleLeftOffset - conceptBadgeWidth
             var titleCutout: TextNodeCutout?
             if !titleLeftCutout.isZero {
                 titleCutout = TextNodeCutout(topLeft: CGSize(width: titleLeftCutout, height: 10.0), topRight: nil, bottomRight: nil)
@@ -5619,6 +5629,19 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         verifiedIconView.removeFromSuperview()
                     }
                     
+                    if let verifiedView = strongSelf.verifiedIconView { nextTitleIconOrigin = max(nextTitleIconOrigin, verifiedView.frame.maxX + 4) }
+                    if strongSelf.conceptBadgeView.superview == nil { strongSelf.mainContentContainerNode.view.addSubview(strongSelf.conceptBadgeView) }
+                    let conceptGlyphWidth = strongSelf.conceptBadgeView.update(peerId: conceptPeerKey, color: item.presentationData.theme.list.itemAccentColor, height: 16)
+                    strongSelf.conceptBadgeView.changed = { [weak node = strongSelf] in
+                        guard let node, let p = node.layoutParams else { return }
+                        let (_, apply) = node.asyncLayout()(p.0, p.6, p.1, p.2, p.3, p.4, p.5)
+                        apply(false, false)
+                    }
+                    if conceptGlyphWidth > 0 {
+                        transition.updateFrame(view: strongSelf.conceptBadgeView, frame: CGRect(x: nextTitleIconOrigin, y: floorToScreenPixels(titleFrame.maxY - lastLineRect.height * 0.5 - 8) - UIScreenPixel, width: conceptGlyphWidth, height: 16))
+                        nextTitleIconOrigin += conceptGlyphWidth + 4
+                    }
+
                     if let currentHiddenIconImage = currentHiddenIconImage {
                         strongSelf.hiddenPeerIconNode.image = currentHiddenIconImage
                         strongSelf.hiddenPeerIconNode.isHidden = false

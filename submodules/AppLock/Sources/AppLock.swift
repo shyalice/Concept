@@ -156,7 +156,7 @@ public final class AppLockContextImpl: AppLockContext {
         
         self.disposable = (combineLatest(queue: .mainQueue(),
             accountManager.accessChallengeData(),
-            accountManager.sharedData(keys: Set([ApplicationSpecificSharedDataKeys.presentationPasscodeSettings])),
+            accountManager.sharedData(keys: Set([ApplicationSpecificSharedDataKeys.presentationPasscodeSettings, SharedDataKeys.conceptSecretPasscodes])),
             presentationDataSignal,
             applicationBindings.applicationIsActive,
             applicationBindings.applicationInForeground,
@@ -248,7 +248,7 @@ public final class AppLockContextImpl: AppLockContext {
                             } else {
                                 return CGRect()
                             }
-                        }))
+                        }), alternativePasscodes: (sharedData.entries[SharedDataKeys.conceptSecretPasscodes]?.get(ConceptSecretPasscodes.self) ?? .defaultSettings).secretPasscodes.map { $0.passcode })
                         if becameActiveRecently, !strongSelf.suppressAutomaticBiometrics, isApplicationActive {
                             passcodeController.presentationCompleted = { [weak self, weak passcodeController] in
                                 if case .enabled = biometrics, self?.suppressAutomaticBiometrics == false {
@@ -416,8 +416,11 @@ public final class AppLockContextImpl: AppLockContext {
         }
     }
     
+    public var onManualLock: (() -> Void)?
+
     public func lock() {
         PasscodeSession.setApplicationAvailable(false)
+        self.onManualLock?()
         self.updateLockState { state in
             // Face ID may still send active events after the user manually locks.
             self.suppressAutomaticBiometrics = true

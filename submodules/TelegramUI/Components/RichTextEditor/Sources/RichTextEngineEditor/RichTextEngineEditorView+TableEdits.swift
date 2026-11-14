@@ -48,6 +48,18 @@ extension RichTextEngineEditorView {
         var plan = currentRoles
         plan.replaceSubrange(roles, with: freshRoles)
         let run = wholeRunRange(roles)
+        // The role plan is immutable. Resolve the target before the nested edit
+        // closures, avoiding a Swift 6.2 ownership-optimizer crash when the role's
+        // enum-backed coordinates are borrowed inside firstIndex/map closures.
+        var target = 0
+        if let cell {
+            for (index, role) in freshRoles.enumerated() {
+                if let coordinates = role.tableCellCoordinates, coordinates == cell {
+                    target = index
+                    break
+                }
+            }
+        }
         // The splice moves the selection twice — the replacement itself, then the caret park — and
         // the selection funnel clears the structural selection on any move it was not told about.
         // The selection is the edit's SUBJECT, not a casualty of it: alignment and the header toggle
@@ -66,9 +78,6 @@ extension RichTextEngineEditorView {
                     restoreStyleFlat(NSRange(location: offset, length: block.length), from: block)
                     offset += block.length + 1
                 }
-                let target = cell.flatMap { wanted in
-                    freshRoles.firstIndex { $0.tableCellCoordinates.map { $0 == wanted } ?? false }
-                } ?? 0
                 engineSelectedRange = NSRange(
                     location: flatOffset(ofRoleAt: roles.lowerBound + target), length: 0)
             }

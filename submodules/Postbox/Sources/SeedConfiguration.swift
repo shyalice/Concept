@@ -74,6 +74,7 @@ public final class SeedConfiguration {
     public let getGlobalNotificationSettings: (Transaction) -> PostboxGlobalNotificationSettings?
     public let defaultGlobalNotificationSettings: PostboxGlobalNotificationSettings
     public let mergeMessageAttributes: ([MessageAttribute], inout [MessageAttribute]) -> Void
+    public let mergeMessageContentAttributes: (String, Int32, [MessageAttribute], String, inout [MessageAttribute]) -> Void
     public let decodeMessageThreadInfo: (CodableEntry) -> Message.AssociatedThreadInfo?
     public let decodeAutoremoveTimeout: (CachedPeerData) -> Int32?
     public let decodeDisplayPeerAsRegularChat: (CachedPeerData) -> Bool
@@ -111,7 +112,8 @@ public final class SeedConfiguration {
         isPeerUpgradeMessage: @escaping (Message) -> Bool,
         automaticThreadIndexInfo: @escaping (PeerId, Int64) -> StoredMessageHistoryThreadInfo?,
         customTagsFromAttributes: @escaping ([MessageAttribute]) -> [MemoryBuffer],
-        displaySavedMessagesAsTopicListPreferencesKey: ValueBoxKey
+        displaySavedMessagesAsTopicListPreferencesKey: ValueBoxKey,
+        mergeMessageContentAttributes: @escaping (String, Int32, [MessageAttribute], String, inout [MessageAttribute]) -> Void = { _, _, _, _, _ in }
     ) {
         self.globalMessageIdsPeerIdNamespaces = globalMessageIdsPeerIdNamespaces
         self.initializeChatListWithHole = initializeChatListWithHole
@@ -131,6 +133,7 @@ public final class SeedConfiguration {
         self.getGlobalNotificationSettings = getGlobalNotificationSettings
         self.defaultGlobalNotificationSettings = defaultGlobalNotificationSettings
         self.mergeMessageAttributes = mergeMessageAttributes
+        self.mergeMessageContentAttributes = mergeMessageContentAttributes
         self.decodeMessageThreadInfo = decodeMessageThreadInfo
         self.decodeAutoremoveTimeout = decodeAutoremoveTimeout
         self.decodeDisplayPeerAsRegularChat = decodeDisplayPeerAsRegularChat

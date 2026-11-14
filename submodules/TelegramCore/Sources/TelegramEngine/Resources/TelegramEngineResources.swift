@@ -270,15 +270,24 @@ public extension TelegramEngine {
         }
 
         public func clearStorage(peerId: EnginePeer.Id?, categories: [StorageUsageStats.CategoryKey], includeMessages: [EngineMessage], excludeMessages: [EngineMessage]) -> Signal<Float, NoError> {
-            return _internal_clearStorage(account: self.account, peerId: peerId, categories: categories, includeMessages: includeMessages.map { $0._asMessage() }, excludeMessages: excludeMessages.map { $0._asMessage() })
+            let peers: Set<EnginePeer.Id>? = categories.isEmpty ? [] : peerId.map { Set([$0]) }
+            let selectedMessages: Set<EngineMessage.Id>? = peers != nil ? Set(includeMessages.map { $0.id }) : nil
+            return _internal_conceptClearDeletedArchive(account: self.account, peerIds: peers, messageIds: selectedMessages, excludedIds: Set(excludeMessages.map { $0.id }))
+            |> mapToSignal { _ in
+                _internal_clearStorage(account: self.account, peerId: peerId, categories: categories, includeMessages: includeMessages.map { $0._asMessage() }, excludeMessages: excludeMessages.map { $0._asMessage() })
+            }
         }
 
         public func clearStorage(peerIds: Set<EnginePeer.Id>, includeMessages: [EngineMessage], excludeMessages: [EngineMessage]) -> Signal<Float, NoError> {
-            _internal_clearStorage(account: self.account, peerIds: peerIds, includeMessages: includeMessages.map { $0._asMessage() }, excludeMessages: excludeMessages.map { $0._asMessage() })
+            return _internal_conceptClearDeletedArchive(account: self.account, peerIds: peerIds, messageIds: Set(includeMessages.map { $0.id }), excludedIds: Set(excludeMessages.map { $0.id }))
+            |> mapToSignal { _ in
+                _internal_clearStorage(account: self.account, peerIds: peerIds, includeMessages: includeMessages.map { $0._asMessage() }, excludeMessages: excludeMessages.map { $0._asMessage() })
+            }
         }
 
         public func clearStorage(messages: [EngineMessage]) -> Signal<Never, NoError> {
-            _internal_clearStorage(account: self.account, messages: messages.map { $0._asMessage() })
+            return _internal_conceptClearDeletedArchive(account: self.account, peerIds: nil, messageIds: Set(messages.map { $0.id }), excludedIds: [])
+            |> mapToSignal { _ in _internal_clearStorage(account: self.account, messages: messages.map { $0._asMessage() }) }
         }
 
         public func clearCachedMediaResources(mediaResourceIds: Set<EngineMediaResource.Id>) -> Signal<Float, NoError> {

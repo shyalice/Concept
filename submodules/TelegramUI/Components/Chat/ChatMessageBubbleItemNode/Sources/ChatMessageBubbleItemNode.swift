@@ -1,6 +1,7 @@
 import SGStrings // MARK: Swiftgram
 import SGSimpleSettings // MARK: Swiftgram
 import TranslateUI // MARK: Swiftgram
+import ConceptBadges
 import Foundation
 import UIKit
 import AsyncDisplayKit
@@ -383,36 +384,6 @@ private func contentNodeMessagesAndClassesForItem(_ item: ChatMessageItem) -> ([
                         isMediaInverted = true
                     }
                     
-                    
-                    // MARK: Swiftgram
-                    var message = message
-                    if message.canRevealContent(contentSettings: item.context.currentContentSettings.with { $0 }) {
-                        let originalTextLength = message.text.count
-                        let noticeString = i18n("Message.HoldToShowOrReport", item.presentationData.strings.baseLanguageCode)
-                        
-                        message = message.withUpdatedText(message.text + "\n" + noticeString)
-                        let noticeStringLength = noticeString.count
-                        let startIndex = originalTextLength + 1 // +1 for the newline character
-                        // Calculate the end index, which is the start index plus the length of noticeString
-                        let endIndex = startIndex + noticeStringLength
-
-                        var newAttributes = message.attributes
-                        newAttributes.append(
-                            TextEntitiesMessageAttribute(
-                                entities: [
-                                    MessageTextEntity(
-                                        range: startIndex..<endIndex,
-                                        // TODO(swiftgram): Add more instructions to collapsed block?
-                                        type: .BlockQuote(isCollapsed: false) //.Custom(type: ApplicationSpecificEntityType.Button)
-                                    )
-                                ]
-                            )
-                        )
-                        message = message.withUpdatedAttributes(newAttributes)
-                    }
-                    //
-                    
-                    
                     if isMediaInverted {
                         var targetIndex = 0
                         if addedPriceInfo || addedPollMedia {
@@ -622,6 +593,10 @@ private func mapVisibility(_ visibility: ListViewItemNodeVisibility, boundsSize:
             return .visible(fraction, CGRect())
         }
     }
+}
+
+private func isDeletedBubbleMessage(_ message: Message) -> Bool {
+    return message.attributes.contains(where: { $0 is DeletedMessageAttribute })
 }
 
 public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewItemNode {
@@ -860,6 +835,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
     private var ephemeralBadgeTextNode: TextNode?
     private var ephemeralBadgeIconNode: UIImageView?
 
+    private let conceptBadgeView = ConceptBadgeView()
     private var credibilityIconView: ComponentHostView<Empty>?
     private var credibilityIconComponent: EmojiStatusComponent?
     private var credibilityIconContent: EmojiStatusComponent.Content?
@@ -2740,6 +2716,11 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         var currentCredibilityIcon: (EmojiStatusComponent.Content, UIColor?)?
         // The author's third-party verification icon, drawn left of the name. A channel's own posts carry no badges
         // beside its name (the chat header shows them), so it is the effective author's only.
+        let conceptAuthorKey: String?
+        if let author = effectiveAuthor, !author.isFake, !author.isScam {
+            conceptAuthorKey = author.id.conceptBadgeKey
+        } else { conceptAuthorKey = nil }
+        let conceptHasBadge = conceptAuthorKey.flatMap { ConceptBadgeService.shared.badge(peerId: $0) } != nil
         var authorVerificationIconFileId: Int64?
         var authorVerificationIcon: EmojiStatusComponent.Content?
         
@@ -3215,7 +3196,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                     attributedString = NSAttributedString(string: "", font: nameFont, textColor: inlineBotNameColor)
                 }
                 
-                var credibilityIconWidth: CGFloat = 0.0
+                var credibilityIconWidth: CGFloat = conceptHasBadge ? 20 : 0
                 if let (currentCredibilityIcon, _) = currentCredibilityIcon {
                     credibilityIconWidth += 4.0
                     switch currentCredibilityIcon {
@@ -4356,6 +4337,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 hasTitleTopicNavigation: hasTitleTopicNavigation,
                 authorNameColor: authorNameColor,
                 layoutConstants: layoutConstants,
+                conceptAuthorKey: conceptAuthorKey,
                 currentCredibilityIcon: currentCredibilityIcon,
                 authorVerificationIcon: authorVerificationIcon,
                 rankBadgeNodeSizeApply: rankBadgeNodeSizeApply,
@@ -4440,6 +4422,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         hasTitleTopicNavigation: Bool,
         authorNameColor: UIColor?,
         layoutConstants: ChatMessageItemLayoutConstants,
+        conceptAuthorKey: String?,
         currentCredibilityIcon: (EmojiStatusComponent.Content, UIColor?)?,
         authorVerificationIcon: EmojiStatusComponent.Content?,
         rankBadgeNodeSizeApply: (CGSize, () -> TextNode?, UIColor?),
@@ -5022,6 +5005,17 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 strongSelf.credibilityHighlightNode = nil
             }
             
+            if strongSelf.conceptBadgeView.superview == nil { strongSelf.clippingNode.view.addSubview(strongSelf.conceptBadgeView) }
+            let conceptWidth = strongSelf.conceptBadgeView.update(peerId: conceptAuthorKey, color: nameColor, height: 16)
+            strongSelf.conceptBadgeView.changed = { [weak node = strongSelf] in
+                guard let node, let item = node.item else { return }
+                item.controllerInteraction.requestMessageUpdate(item.message.id, false, nil)
+            }
+            if conceptWidth > 0 {
+                let x = max(nameNode.frame.maxX, strongSelf.credibilityIconView?.frame.maxX ?? 0) + 4
+                animation.animator.updateFrame(layer: strongSelf.conceptBadgeView.layer, frame: CGRect(x: x, y: floor(nameNode.frame.midY - 8), width: conceptWidth, height: 16), completion: nil)
+            }
+
             var boostCount: Int = 0
             if incoming {
                 for attribute in item.message.attributes {
@@ -5349,6 +5343,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
             strongSelf.boostButtonNode = nil
             strongSelf.boostHighlightNode?.removeFromSupernode()
             strongSelf.boostHighlightNode = nil
+            strongSelf.conceptBadgeView.isHidden = true
             strongSelf.applyBubblelessHeaderTime(nil, nameNodeFrame: CGRect(), animation: animation)
         }
         if let ephemeralBadgeTextNode = ephemeralBadgeNodeSizeApply.2() {
@@ -5732,10 +5727,38 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
             }
             
             contentContainer?.update(size: relativeFrame.size, contentOrigin: contentOrigin, selectionInsets: selectionInsets, index: index, presentationData: item.presentationData, graphics: graphics, backgroundType: backgroundType, presentationContext: item.controllerInteraction.presentationContext, mediaBox: item.context.account.postbox.mediaBox, messageSelection: itemSelection)
+
+            if let contentContainer = contentContainer {
+                let deletedMessageAlpha = CGFloat(AntiDeleteManager.shared.deletedMessageDisplayAlpha)
+                let containerAlpha: CGFloat = isDeletedBubbleMessage(item.message) ? deletedMessageAlpha : 1.0
+                // UIViewGroupOpacity is disabled app-wide. Composite the thumbnail,
+                // video and overlays before fading, so the thumbnail cannot bleed
+                // through a separately translucent playback surface.
+                contentContainer.sourceNode.contentNode.layer.allowsGroupOpacity = containerAlpha < 1.0
+                if case .System = animation {
+                    animation.animator.updateAlpha(layer: contentContainer.sourceNode.contentNode.layer, alpha: containerAlpha, completion: nil)
+                } else {
+                    contentContainer.sourceNode.contentNode.alpha = containerAlpha
+                }
+            }
                         
             index += 1
         }
         
+        let mainContainerAlpha: CGFloat
+        if contentContainerNodeFrames.isEmpty, isDeletedBubbleMessage(item.message) {
+            mainContainerAlpha = CGFloat(AntiDeleteManager.shared.deletedMessageDisplayAlpha)
+        } else {
+            mainContainerAlpha = 1.0
+        }
+        if case .System = animation {
+            strongSelf.mainContextSourceNode.contentNode.layer.allowsGroupOpacity = mainContainerAlpha < 1.0
+            animation.animator.updateAlpha(layer: strongSelf.mainContextSourceNode.contentNode.layer, alpha: mainContainerAlpha, completion: nil)
+        } else {
+            strongSelf.mainContextSourceNode.contentNode.layer.allowsGroupOpacity = mainContainerAlpha < 1.0
+            strongSelf.mainContextSourceNode.contentNode.alpha = mainContainerAlpha
+        }
+
         if hasSelection {
             var currentMaskView: UIImageView?
             if let maskView = strongSelf.contentContainersWrapperNode.view.mask as? UIImageView {

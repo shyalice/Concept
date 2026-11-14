@@ -11,7 +11,7 @@
 # TelegramCore themselves. Comments and string literals do not count. Keep the entries sorted
 # (byte order, as `LC_ALL=C sort`).
 
-Telegram/NotificationService/Sources/NotificationService.swift
+Telegram/NotificationService/Sources/NotificationPayloadProcessor.swift
 Telegram/SiriIntents/IntentHandler.swift
 Telegram/SiriIntents/IntentMessages.swift
 submodules/AccountContext/Sources/UniversalVideoNode.swift

@@ -274,7 +274,7 @@ class BazelCommandLine:
         return combined_arguments
 
     def get_additional_build_arguments(self):
-        combined_arguments = []
+        combined_arguments = shlex.split(self.additional_args) if self.additional_args else []
         if self.split_submodules:
             combined_arguments += [
                 # https://github.com/bazelbuild/rules_swift
@@ -315,7 +315,7 @@ class BazelCommandLine:
             combined_arguments += ['--spawn_strategy=sandboxed']
 
         if self.disable_provisioning_profiles:
-            combined_arguments += ['--//Telegram:disableProvisioningProfiles']
+            combined_arguments += ['--//Telegram:disableProvisioningProfiles', '--features=disable_legacy_signing']
 
         combined_arguments += self.common_args
         combined_arguments += self.common_build_args
@@ -489,13 +489,22 @@ def resolve_configuration(base_path, bazel_command_line: BazelCommandLine, argum
         shutil.rmtree(provisioning_path)
     os.makedirs(provisioning_path, exist_ok=True)
 
-    codesigning_data = resolve_codesigning(
-        arguments=arguments,
-        base_path=base_path,
-        build_configuration=build_configuration,
-        provisioning_profiles_path=provisioning_path,
-        additional_codesigning_output_path=additional_codesigning_output_path
-    )
+    if getattr(arguments, 'disableProvisioningProfiles', False):
+        # An unsigned/simulator build has no signing profile to inspect. This
+        # value is an entitlements template; the eventual signing profile grants
+        # the actual environment, which the client resolves at runtime.
+        codesigning_data = ResolvedCodesigningData(
+            aps_environment='production',
+            use_xcode_managed_codesigning=False
+        )
+    else:
+        codesigning_data = resolve_codesigning(
+            arguments=arguments,
+            base_path=base_path,
+            build_configuration=build_configuration,
+            provisioning_profiles_path=provisioning_path,
+            additional_codesigning_output_path=additional_codesigning_output_path
+        )
     if codesigning_data.aps_environment is None:
         print('Could not find a valid aps-environment entitlement in the provided provisioning profiles')
         sys.exit(1)
@@ -557,7 +566,7 @@ def generate_project(bazel, arguments):
         generate_dsym = arguments.generateDsym
     if arguments.target is not None:
         target_name = arguments.target
-    
+
     call_executable(['killall', 'Xcode'], check_result=False)
 
     xcodeproj_path = generate(
@@ -630,6 +639,7 @@ def build(bazel, arguments):
         override_xcode_version=arguments.overrideXcodeVersion,
         bazel_user_root=arguments.bazelUserRoot
     )
+    bazel_command_line.add_additional_args(arguments.bazelArguments)
 
     if arguments.lock:
         bazel_command_line.set_lock(True)
@@ -681,7 +691,7 @@ def build(bazel, arguments):
 
     # App Store review rejects a non-public libicucore function, and nothing before it does (ICUImportCheck.py).
     # bazel-bin is this build's configuration now; a --target build makes no .ipa.
-    built_ipa_path = 'bazel-bin/Telegram/Telegram.ipa'
+    built_ipa_path = 'bazel-bin/Telegram/Swiftgram.ipa'
     if os.path.exists(built_ipa_path) and ICUImportCheck.run([built_ipa_path]) != 0:
         sys.exit(1)
 
@@ -704,19 +714,24 @@ def build(bazel, arguments):
             sys.exit(1)
         shutil.copyfile(ipa_paths[0], artifacts_path + '/Swiftgram.ipa')
 
-        dsym_paths = glob.glob('bazel-bin/Telegram/*.dSYM') + glob.glob('bazel-out/watchos_arm64_32-opt-watchos-arm64_32-min7.0-applebin_watchos-ST-*/bin/Telegram/SwiftgramWatchApp_dsyms/*.dSYM') + glob.glob('bazel-out/watchos_armv7k-opt-watchos-armv7k-min7.0-applebin_watchos-ST-*/bin/Telegram/SwiftgramWatchApp_dsyms/*.dSYM') 
-        for dsym_path in dsym_paths:
-            file_name = os.path.basename(dsym_path)
-            shutil.copytree(dsym_path, artifacts_path + '/DSYMs/{}'.format(file_name))
-        previous_directory = os.getcwd()
-        os.chdir(artifacts_path)
-        run_executable_with_output('zip', arguments=[
-            '-r',
-            'Swiftgram.DSYMs.zip',
-            './DSYMs'
-        ], check_result=True)
-        os.chdir(previous_directory)
-        shutil.rmtree(artifacts_path + '/DSYMs')
+        try:
+            dsym_paths = glob.glob('bazel-bin/Telegram/*.dSYM') + glob.glob('bazel-out/watchos_arm64_32-opt-watchos-arm64_32-min7.0-applebin_watchos-ST-*/bin/Telegram/SwiftgramWatchApp_dsyms/*.dSYM') + glob.glob('bazel-out/watchos_armv7k-opt-watchos-armv7k-min7.0-applebin_watchos-ST-*/bin/Telegram/SwiftgramWatchApp_dsyms/*.dSYM')
+            for dsym_path in dsym_paths:
+                file_name = os.path.basename(dsym_path)
+                shutil.copytree(dsym_path, artifacts_path + '/DSYMs/{}'.format(file_name))
+            previous_directory = os.getcwd()
+            os.chdir(artifacts_path)
+            run_executable_with_output('zip', arguments=[
+                '-r',
+                'Swiftgram.DSYMs.zip',
+                './DSYMs'
+            ], check_result=True)
+            os.chdir(previous_directory)
+            shutil.rmtree(artifacts_path + '/DSYMs')
+        except Exception as e:
+            print(f'Warning: dSYM packaging skipped: {e}')
+            if os.path.exists(artifacts_path + '/DSYMs'):
+                shutil.rmtree(artifacts_path + '/DSYMs', ignore_errors=True)
 
 
 def test(bazel, arguments):
@@ -966,7 +981,7 @@ if __name__ == '__main__':
 
     cleanParser = subparsers.add_parser(
         'clean', help='''
-            Clean local bazel cache. Does not affect files cached remotely (via --cacheHost=...) or 
+            Clean local bazel cache. Does not affect files cached remotely (via --cacheHost=...) or
             locally in an external directory ('--cacheDir=...')
             '''
     )
@@ -1461,7 +1476,7 @@ if __name__ == '__main__':
                 arguments=args,
                 additional_codesigning_output_path=remote_input_path
             )
-            
+
             shutil.copyfile(args.configurationPath, remote_input_path + '/configuration.json')
 
             watch_provisioning_profile_remote_path = prepare_remote_watch_inputs(arguments=args, remote_input_path=remote_input_path)

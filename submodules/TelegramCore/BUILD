@@ -30,11 +30,13 @@ swift_library(
         "-warnings-as-errors",
     ],
     deps = sgdeps + [
+        "//submodules/AppLockState:AppLockState",
         "//submodules/TelegramApi:TelegramApi",
         "//submodules/MtProtoKit:MtProtoKit",
         "//submodules/MediaPreuploadRegistry:MediaPreuploadRegistry",
         "//submodules/WebProxyTransport:WebProxyTransport",
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
+        "//submodules/ConceptNotifications:ConceptNotifications",
         "//submodules/Postbox:Postbox",
         "//submodules/CloudData:CloudData",
         "//submodules/EncryptionProvider:EncryptionProvider",

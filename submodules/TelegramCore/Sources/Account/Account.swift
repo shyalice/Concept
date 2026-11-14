@@ -300,7 +300,7 @@ public enum AccountResult {
     case authorized(Account)
 }
 
-public func accountWithId(accountManager: AccountManager<TelegramAccountManagerTypes>, networkArguments: NetworkInitializationArguments, id: AccountRecordId, encryptionParameters: ValueBoxEncryptionParameters, supplementary: Bool, isSupportUser: Bool, rootPath: String, beginWithTestingEnvironment: Bool, backupData: AccountBackupData?, auxiliaryMethods: AccountAuxiliaryMethods, shouldKeepAutoConnection: Bool = true) -> Signal<AccountResult, NoError> {
+public func accountWithId(accountManager: AccountManager<TelegramAccountManagerTypes>, networkArguments: NetworkInitializationArguments, id: AccountRecordId, encryptionParameters: ValueBoxEncryptionParameters, supplementary: Bool, isSupportUser: Bool, rootPath: String, beginWithTestingEnvironment: Bool, backupData: AccountBackupData?, auxiliaryMethods: AccountAuxiliaryMethods, shouldKeepAutoConnection: Bool = true, initialPeerIdsExcludedFromUnreadCounters: Set<PeerId> = []) -> Signal<AccountResult, NoError> {
     let path = "\(rootPath)/\(accountRecordIdPathName(id))"
     
     let postbox = openPostbox(
@@ -313,7 +313,8 @@ public func accountWithId(accountManager: AccountManager<TelegramAccountManagerT
         isReadOnly: false,
         useCopy: false,
         useCaches: !supplementary,
-        removeDatabaseOnError: !supplementary
+        removeDatabaseOnError: !supplementary,
+        initialPeerIdsExcludedFromUnreadCounters: initialPeerIdsExcludedFromUnreadCounters
     )
     
     return postbox
@@ -333,6 +334,7 @@ public func accountWithId(accountManager: AccountManager<TelegramAccountManagerT
                 }
                 |> mapToSignal { localizationSettings, proxySettings, networkEngine -> Signal<AccountResult, NoError> in
                     return postbox.transaction { transaction -> (PostboxCoding?, LocalizationSettings?, ProxySettings?, NetworkSettings?, AppConfiguration) in
+                        transaction.updatePeerIdsExcludedFromUnreadCounters(initialPeerIdsExcludedFromUnreadCounters)
                         var state = transaction.getState()
                         if state == nil, let backupData = backupData {
                             let backupState = AuthorizedAccountState(isTestingEnvironment: beginWithTestingEnvironment, masterDatacenterId: backupData.masterDatacenterId, peerId: PeerId(backupData.peerId), state: nil, invalidatedChannels: [])
@@ -1274,6 +1276,7 @@ public class Account {
     private let managedOperationsDisposable = DisposableSet()
     private var storageSettingsDisposable: Disposable?
     private var automaticCacheEvictionContext: AutomaticCacheEvictionContext?
+    private var conceptArchivedMediaContext: ConceptArchivedMediaContext?
     
     private var taskManager: AccountTaskManager?
     
@@ -1638,6 +1641,7 @@ public class Account {
         }
         self.restartConfigurationUpdates()
         
+        self.conceptArchivedMediaContext = ConceptArchivedMediaContext(postbox: postbox)
         self.automaticCacheEvictionContext = AutomaticCacheEvictionContext(postbox: postbox, accountManager: accountManager)
         
         /*#if DEBUG
@@ -1805,7 +1809,8 @@ public func standaloneStateManager(
     id: AccountRecordId,
     encryptionParameters: ValueBoxEncryptionParameters,
     rootPath: String,
-    auxiliaryMethods: AccountAuxiliaryMethods
+    auxiliaryMethods: AccountAuxiliaryMethods,
+    initialPeerIdsExcludedFromUnreadCounters: Set<PeerId> = []
 ) -> Signal<AccountStateManager?, NoError> {
     let path = "\(rootPath)/\(accountRecordIdPathName(id))"
 
@@ -1819,7 +1824,8 @@ public func standaloneStateManager(
         isReadOnly: false,
         useCopy: false,
         useCaches: false,
-        removeDatabaseOnError: false
+        removeDatabaseOnError: false,
+        initialPeerIdsExcludedFromUnreadCounters: initialPeerIdsExcludedFromUnreadCounters
     )
     
     Logger.shared.log("StandaloneStateManager", "Prepare request postbox")
@@ -1847,6 +1853,7 @@ public func standaloneStateManager(
                 
                 return postbox.transaction { transaction -> (PostboxCoding?, LocalizationSettings?, ProxySettings?, NetworkSettings?) in
                     Logger.shared.log("StandaloneStateManager", "Getting state")
+                    transaction.updatePeerIdsExcludedFromUnreadCounters(initialPeerIdsExcludedFromUnreadCounters)
                     
                     let state = transaction.getState()
 

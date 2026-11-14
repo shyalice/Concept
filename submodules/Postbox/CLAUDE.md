@@ -57,3 +57,12 @@ dereference as today, and a later real update for the same id revives it for eve
   entity.
 - Tests belong in `submodules/Postbox/Tests/` on `PostboxFixture` (two messages sharing one media, then an empty
   update).
+# Concept message-content merge hook
+
+`SeedConfiguration.mergeMessageContentAttributes` runs alongside the existing
+attribute merge when MessageHistoryTable replaces a stored row. It receives the
+previous text/date/attributes and the new StoreMessage; its default is a no-op.
+TelegramCore uses it to preserve deleted markers and append observed edit versions
+inside the account transaction. Postbox stays independent of Concept/TelegramCore
+model types. `Transaction.recordMessageDeletions` records received tombstones even
+when the client keeps the local row.

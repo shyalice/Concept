@@ -278,6 +278,11 @@ public extension Peer {
     }
     
     var isCopyProtectionEnabled: Bool {
+        // MARK: Swiftgram
+        if MiscSettingsManager.shared.shouldBypassCopyProtection {
+            return false
+        }
+
         switch self {
         case let group as TelegramGroup:
             return group.flags.contains(.copyProtectionEnabled)

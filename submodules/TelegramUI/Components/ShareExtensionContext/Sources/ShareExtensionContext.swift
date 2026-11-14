@@ -403,12 +403,20 @@ public class ShareRootControllerImpl {
                 accountManager, appLockContext, applicationBindings, initialPresentationDataAndSettings!, networkArguments
             )
             |> mapToSignal { context in
-                context.sharedContext.activeAccountContexts
-                |> filter { $0.primary != nil }
+                combineLatest(
+                    context.sharedContext.activeAccountContexts,
+                    accountManager.sharedData(keys: [SharedDataKeys.conceptSecretPasscodes])
+                )
+                |> filter { accounts, _ in accounts.primary != nil }
                 |> take(1)
-                |> mapToSignal { accounts -> Signal<(ShareControllerEnvironment, ShareControllerAccountContext, [ShareControllerSwitchableAccount]), NoError> in
-                    guard let primary = accounts.primary else { return .complete() }
-                    let contexts = accounts.accounts.map { $0.1 }
+                |> mapToSignal { accounts, sharedData -> Signal<(ShareControllerEnvironment, ShareControllerAccountContext, [ShareControllerSwitchableAccount]), NoError> in
+                    let settings = sharedData.entries[SharedDataKeys.conceptSecretPasscodes]?.get(ConceptSecretPasscodes.self) ?? .defaultSettings
+                    let checkedSettings = settings.withCheckedTimeoutUsingLockStateFile(rootPath: initializationData.appGroupPath + "/telegram-data")
+                    let hiddenAccounts = checkedSettings.inactiveAccountIds()
+                    let contexts = accounts.accounts.map { $0.1 }.filter { !hiddenAccounts.contains($0.account.id) }
+                    guard let primary = contexts.first(where: { $0.account.id == accounts.primary?.account.id }) ?? contexts.first else {
+                        return .complete()
+                    }
                     let environment = ShareControllerExtensionEnvironment(sharedContext: primary.sharedContext, accounts: contexts)
                     return combineLatest(contexts.map { accountContext in
                         accountContext.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: accountContext.account.peerId))

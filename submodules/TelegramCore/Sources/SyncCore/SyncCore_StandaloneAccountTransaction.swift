@@ -276,7 +276,8 @@ public let telegramPostboxSeedConfiguration: SeedConfiguration = {
             
             return result
         },
-        displaySavedMessagesAsTopicListPreferencesKey: PreferencesKeys.displaySavedChatsAsTopics()
+        displaySavedMessagesAsTopicListPreferencesKey: PreferencesKeys.displaySavedChatsAsTopics(),
+        mergeMessageContentAttributes: conceptMergeMessageContentAttributes
     )
 }()
 
@@ -284,16 +285,19 @@ public enum AccountTransactionError {
     case couldNotOpen
 }
 
-public func accountTransaction<T>(rootPath: String, id: AccountRecordId, encryptionParameters: ValueBoxEncryptionParameters, isReadOnly: Bool, useCopy: Bool = false, useCaches: Bool = true, removeDatabaseOnError: Bool = true, transaction: @escaping (Postbox, Transaction) -> T) -> Signal<T, AccountTransactionError> {
+public func accountTransaction<T>(rootPath: String, id: AccountRecordId, encryptionParameters: ValueBoxEncryptionParameters, isReadOnly: Bool, useCopy: Bool = false, useCaches: Bool = true, removeDatabaseOnError: Bool = true, initialPeerIdsExcludedFromUnreadCounters: Set<PeerId> = [], transaction: @escaping (Postbox, Transaction) -> T) -> Signal<T, AccountTransactionError> {
     let path = "\(rootPath)/\(accountRecordIdPathName(id))"
-    let postbox = openPostbox(basePath: path + "/postbox", seedConfiguration: telegramPostboxSeedConfiguration, encryptionParameters: encryptionParameters, timestampForAbsoluteTimeBasedOperations: Int32(CFAbsoluteTimeGetCurrent() + NSTimeIntervalSince1970), isMainProcess: false, isTemporary: true, isReadOnly: isReadOnly, useCopy: useCopy, useCaches: useCaches, removeDatabaseOnError: removeDatabaseOnError)
+    let postbox = openPostbox(basePath: path + "/postbox", seedConfiguration: telegramPostboxSeedConfiguration, encryptionParameters: encryptionParameters, timestampForAbsoluteTimeBasedOperations: Int32(CFAbsoluteTimeGetCurrent() + NSTimeIntervalSince1970), isMainProcess: false, isTemporary: true, isReadOnly: isReadOnly, useCopy: useCopy, useCaches: useCaches, removeDatabaseOnError: removeDatabaseOnError, initialPeerIdsExcludedFromUnreadCounters: initialPeerIdsExcludedFromUnreadCounters)
     return postbox
     |> castError(AccountTransactionError.self)
     |> mapToSignal { value -> Signal<T, AccountTransactionError> in
         switch value {
         case let .postbox(postbox):
             return postbox.transaction { t in
-                transaction(postbox, t)
+                if !isReadOnly {
+                    t.updatePeerIdsExcludedFromUnreadCounters(initialPeerIdsExcludedFromUnreadCounters)
+                }
+                return transaction(postbox, t)
             }
             |> castError(AccountTransactionError.self)
         case .error:

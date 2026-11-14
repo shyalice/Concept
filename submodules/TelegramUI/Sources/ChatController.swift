@@ -2397,7 +2397,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             }
 
             let isSecret = strongSelf.presentationInterfaceState.copyProtectionEnabled || strongSelf.chatLocation.peerId?.namespace == Namespaces.Peer.SecretChat
-            let pinchController = makePinchController(sourceNode: sourceNode, disableScreenshots: isSecret, getContentAreaInScreenSpace: {
+            let pinchController = makePinchController(sourceNode: sourceNode, disableScreenshots: isSecret && !MiscSettingsManager.shared.shouldBypassScreenshotProtection, getContentAreaInScreenSpace: {
                 guard let strongSelf = self else {
                     return CGRect()
                 }
@@ -6848,7 +6848,8 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             })
         }
         
-        let chatTheme: Signal<ChatTheme?, NoError> = self.chatThemePromise.get()
+        let chatTheme: Signal<ChatTheme?, NoError> = combineLatest(self.chatThemePromise.get(), ConceptAppearanceSettings.disablePerChatWallpaperSignal)
+        |> map { theme, disabled in disabled ? nil : theme }
         |> distinctUntilChanged
     
         let uploadingChatWallpaper: Signal<TelegramWallpaper?, NoError>
@@ -6866,9 +6867,9 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             uploadingChatWallpaper = .single(nil)
         }
         
-        let chatWallpaper: Signal<TelegramWallpaper?, NoError> = combineLatest(self.chatWallpaperPromise.get(), uploadingChatWallpaper)
-        |> map { chatWallpaper, uploadingChatWallpaper in
-            return uploadingChatWallpaper ?? chatWallpaper
+        let chatWallpaper: Signal<TelegramWallpaper?, NoError> = combineLatest(self.chatWallpaperPromise.get(), uploadingChatWallpaper, ConceptAppearanceSettings.disablePerChatWallpaperSignal)
+        |> map { chatWallpaper, uploadingChatWallpaper, disabled in
+            return disabled ? nil : (uploadingChatWallpaper ?? chatWallpaper)
         }
         |> distinctUntilChanged
         

@@ -18,7 +18,7 @@
 /* Example: Hide "All Chats" */
 "Settings.Folders.AllChatsHidden" = "Скрыть \"%@\"";
 "Settings.Folders.RememberLast" = "Открывать последнюю папку";
-"Settings.Folders.RememberLast.Notice" = "Swiftgram откроет последнюю использованную папку после перезапуска или переключения учетной записи";
+"Settings.Folders.RememberLast.Notice" = "Concept откроет последнюю использованную папку после перезапуска или переключения учетной записи";
 
 "Settings.Folders.CompactNames" = "Уменьшенные расстояния";
 "Settings.Folders.AllChatsTitle" = "Название \"Все чаты\"";
@@ -44,7 +44,7 @@
 /* Do not translate */
 "Settings.Translation.Backend.gtranslate" = "GTranslate";
 "Settings.Translation.Backend.system" = "Система";
-"Settings.Translation.Backend.Notice" = "Swiftgram будет использовать %@, если выбранный сервис перевода недоступен.";
+"Settings.Translation.Backend.Notice" = "Concept будет использовать %@, если выбранный сервис перевода недоступен.";
 
 "Settings.Transcription.Header" = "ГОЛОС В ТЕКСТ";
 "Settings.Transcription.Backend" = "Сервис";
@@ -52,7 +52,7 @@
 "Settings.Transcription.Backend.default" = "Telegram";
 /* Do not translate */
 "Settings.Transcription.Backend.apple" = "Apple";
-"Settings.Transcription.Backend.Notice" = "Swiftgram будет использовать %@, если выбранный сервис транскрипции недоступен.";
+"Settings.Transcription.Backend.Notice" = "Concept будет использовать %@, если выбранный сервис транскрипции недоступен.";
 
 "Stories.Warning.Author" = "Автор";
 "Stories.Warning.ViewStory" = "Просмотреть историю?";
@@ -101,7 +101,7 @@
 "Common.RestartRequired" = "Необходим перезапуск";
 "Common.RestartNow" = "Перезапустить Сейчас";
 "Common.OpenTelegram" = "Открыть Telegram";
-"Common.UseTelegramForPremium" = "Обратите внимание, что для получения Telegram Premium, вы должны использовать официальное приложение Telegram. Как только вы получите Telegram Premium, все его функции станут доступны в Swiftgram.";
+"Common.UseTelegramForPremium" = "Обратите внимание, что для получения Telegram Premium, вы должны использовать официальное приложение Telegram. Как только вы получите Telegram Premium, все его функции станут доступны в Concept.";
 "Common.UpdateOS" = "Требуется обновление iOS";
 "Common.KnowWhatYouDo" = "Пожалуйста, меняйте эти настройки только если вы знаете, что они делают.";
 
@@ -117,7 +117,7 @@
 "ContextMenu.SelectFromUser" = "Выбрать от Автора";
 
 "Settings.ContextMenu" = "КОНТЕКСТНОЕ МЕНЮ";
-"Settings.ContextMenu.Notice" = "Выключенные пункты будут доступны в подменю «Swiftgram».";
+"Settings.ContextMenu.Notice" = "Выключенные пункты будут доступны в подменю «Concept».";
 
 
 "Settings.ChatSwipeOptions" = "Опции чатов при свайпе";
@@ -168,7 +168,7 @@
 "Settings.secondsInMessages" = "Секунды в Сообщениях";
 
 "Settings.CallConfirmation" = "Подтверждение вызова";
-"Settings.CallConfirmation.Notice" = "Swiftgram запросит подтверждение перед совершением звонка.";
+"Settings.CallConfirmation.Notice" = "Concept запросит подтверждение перед совершением звонка.";
 
 /* Confirmation before making a Call */
 "CallConfirmation.Audio.Title" = "Позвонить?";
@@ -193,11 +193,11 @@
 "SessionBackup.LoggedIn" = "Залогинен";
 "SessionBackup.LoggedOut" = "Разлогинен";
 "SessionBackup.DeleteAll.Title" = "Удалить все сессии?";
-"SessionBackup.DeleteAll.Text" = "Все сессии будут удалены из Keychain.\n\nАккаунты не будут разлогинены из Swiftgram.";
+"SessionBackup.DeleteAll.Text" = "Все сессии будут удалены из Keychain.\n\nАккаунты не будут разлогинены из Concept.";
 "SessionBackup.DeleteSingle.Title" = "Удалить 1 (одну) сессию?";
-"SessionBackup.DeleteSingle.Text" = "%@ сессия будет удалена из Keychain.\n\nАккаунт не будет разлогинен из Swiftgram.";
+"SessionBackup.DeleteSingle.Text" = "%@ сессия будет удалена из Keychain.\n\nАккаунт не будет разлогинен из Concept.";
 "SessionBackup.RemoveFromApp.Title" = "Удалить аккаунт из приложения?";
-"SessionBackup.RemoveFromApp.Text" = "%@ сессия БУДЕТ УДАЛЕНА из Swiftgram! Сессия останется активной, чтобы вы могли восстановить ее позже.";
+"SessionBackup.RemoveFromApp.Text" = "%@ сессия БУДЕТ УДАЛЕНА из Concept! Сессия останется активной, чтобы вы могли восстановить ее позже.";
 "SessionBackup.Notice" = "Сессии шифруются и хранятся в Keychain устройства. Сессии никогда не покидают ваше устройство.\n\nВАЖНО: Чтобы восстановить сессии на новом устройстве или после сброса системы, ОБЯЗАТЕЛЬНО включите шифрование резервных копий ОС, иначе Keychain будет утерян при восстановлении.\n\nПРИМЕЧАНИЕ: Сессии всё ещё могут быть разлогинены самим Telegram или с другого устройства.";
 
 "AuthorizationError.Notice" = "Telegram разлогинил текущую сессию.";
@@ -284,3 +284,26 @@
 "Settings.NY.Notice" = "Доступны только на ограниченное время!";
 "Settings.videoControlsInFooter" = "Кнопки видео снизу";
 "Settings.HideAccountInNotifications" = "Скрыть аккаунт в уведомлениях";
+"Message.EditHistory.Title" = "История изменений";
+"Message.EditHistory.Notice" = "Сохраняются версии, полученные этой установкой клиента. Более ранние изменения и изменения, сделанные, пока клиент не мог получать обновления, недоступны.";
+"Message.EditHistory.Current" = "Текущая версия";
+"Message.EditHistory.FirstObserved" = "Первая сохранённая версия";
+"Message.EditHistory.Version" = "Версия";
+"Message.EditHistory.EmptyText" = "Без текста или подписи";
+
+"Media.Export.Title" = "Сохранение в Фото";
+"Media.Export.SavePurchased" = "Сохранить купленные медиа";
+"Media.Export.Saving" = "Сохранение в Фото…";
+"Media.Export.Saved" = "Медиа сохранены в Фото.";
+"Media.Export.DownloadError" = "Не удалось загрузить медиа. Проверьте подключение и повторите попытку. Уже сохранённые файлы повторно загружаться не будут.";
+"Media.Export.SaveError" = "Не удалось сохранить медиа. Проверьте свободное место и повторите попытку. Уже сохранённые файлы повторно сохраняться не будут.";
+"Media.Export.Unsupported" = "Этот формат медиа нельзя сохранить в Фото.";
+"Media.Export.Retry" = "Повторить";
+
+"Media.Export.SaveAll" = "Сохранить всё в Фото";
+
+"Media.Export.Downloading" = "Загрузка…";
+
+"Media.Export.Cancelled" = "Загрузка отменена. Уже сохранённые файлы остались в Фото.";
+
+"Media.Export.AccessDenied" = "Разрешите доступ к Фото в настройках iOS и повторите попытку.";

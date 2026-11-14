@@ -5,10 +5,11 @@ import SwiftSignalKit
 
 public func convertOpusToAAC(sourcePath: String, allocateTempFile: @escaping () -> String) -> Signal<String?, NoError> {
     return Signal { subscriber in
-        var isCancelled = false
+        let isCancelled = Atomic<Bool>(value: false)
         let queue = Queue()
         
         queue.async {
+            guard !isCancelled.with({ $0 }) else { return }
             do {
                 let audioSource = SoftwareAudioSource(path: sourcePath)
                 
@@ -43,7 +44,7 @@ public func convertOpusToAAC(sourcePath: String, allocateTempFile: @escaping () 
                 
                 audioInput.requestMediaDataWhenReady(on: queue.queue, using: {
                     if audioInput.isReadyForMoreMediaData {
-                        if !isCancelled, let sampleBuffer = audioSource.readSampleBuffer() {
+                        if !isCancelled.with({ $0 }), let sampleBuffer = audioSource.readSampleBuffer() {
                             if !audioInput.append(sampleBuffer) {
                                 audioInput.markAsFinished()
                                 finishWriting()
@@ -63,7 +64,7 @@ public func convertOpusToAAC(sourcePath: String, allocateTempFile: @escaping () 
         }
         
         return ActionDisposable {
-            isCancelled = true
+            _ = isCancelled.swap(true)
         }
     }
 }

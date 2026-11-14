@@ -16,6 +16,7 @@ import TelegramStringFormatting
 import EmojiStatusComponent
 import GlassBackgroundComponent
 import NewsFeedSupport
+import ConceptBadges
 
 /// The pill's labels as an expansion borrows them: frames in the content container's coordinates, and the colours they
 /// are drawn in.
@@ -591,6 +592,8 @@ public final class ChatTitleComponent: Component {
         private var credibilityIcon: ComponentView<Empty>?
         private var verifiedIcon: ComponentView<Empty>?
         private var statusIcon: ComponentView<Empty>?
+        private let conceptBadge = ConceptBadgeView()
+        private var conceptBadgeUser: (id: String, name: String)?
         
         private var presenceManager: PeerPresenceStatusManager?
         
@@ -607,6 +610,10 @@ public final class ChatTitleComponent: Component {
             
             super.init(frame: frame)
             
+            self.conceptBadge.changed = { [weak self] in self?.state?.updated(transition: .immediate) }
+            self.contentContainer.addSubview(self.conceptBadge)
+            self.accessibilityCustomActions = [UIAccessibilityCustomAction(name: "Concept badge information", target: self, selector: #selector(self.showConceptBadge))]
+
             self.presenceManager = PeerPresenceStatusManager(update: { [weak self] in
                 guard let self else {
                     return
@@ -651,9 +658,11 @@ public final class ChatTitleComponent: Component {
         }
         
         @objc private func onTapGesture(_ recognizer: TapLongTapOrDoubleTapGestureRecognizer) {
-            if let (gesture, _) = recognizer.lastRecognizedGestureAndLocation {
+            if let (gesture, location) = recognizer.lastRecognizedGestureAndLocation {
                 switch gesture {
                 case .tap:
+                    let point = self.contentContainer.convert(location, to: self.conceptBadge)
+                    if !self.conceptBadge.isHidden, self.conceptBadge.bounds.insetBy(dx: -3.0, dy: -8.0).contains(point), self.showConceptBadge() { return }
                     self.component?.tapped()
                 case .longTap:
                     self.component?.longTapped()
@@ -663,6 +672,13 @@ public final class ChatTitleComponent: Component {
             }
         }
         
+        @objc private func showConceptBadge() -> Bool {
+            guard let component = self.component, let user = self.conceptBadgeUser,
+                  ConceptBadgeService.shared.badge(peerId: user.id) != nil else { return false }
+            presentConceptBadgeInfo(context: component.context, peerId: user.id, userName: user.name)
+            return true
+        }
+
         func update(component: ChatTitleComponent, availableSize: CGSize, state: EmptyComponentState, environment: Environment<Empty>, transition: ComponentTransition) -> CGSize {
             let statusIconsSpacing: CGFloat = 4.0
             var leftTitleIconSpacing: CGFloat = 3.0
@@ -673,6 +689,14 @@ public final class ChatTitleComponent: Component {
             self.component = component
             self.state = state
             
+            self.conceptBadgeUser = nil
+            if case let .peer(peerView, customTitle, _, _, scheduled, _, _, _, _) = component.content,
+               customTitle == nil, !scheduled, let peer = peerView.peer,
+               peer.id != component.context.account.peerId {
+                if let key = peer.id.conceptBadgeKey { self.conceptBadgeUser = (key, EnginePeer(peer).compactDisplayTitle) }
+            }
+            let conceptWidth = self.conceptBadge.update(peerId: self.conceptBadgeUser?.id, color: component.theme.list.itemAccentColor, height: 20.0)
+
             var titleSegments: [AnimatedTextComponent.Item] = []
             var titleLeftIcon: TitleIconComponent.Kind?
             var leadingEmojiStatus: EmojiStatusComponent.Content?
@@ -1427,7 +1451,7 @@ public final class ChatTitleComponent: Component {
                 titleLeftIconsWidth += verifiedIconSize.width + statusIconsSpacing
             }
             
-            var titleRightIconsWidth: CGFloat = 0.0
+            var titleRightIconsWidth: CGFloat = conceptWidth > 0.0 ? conceptWidth + statusIconsSpacing : 0.0
             if let rightIconSize {
                 titleRightIconsWidth += rightIconSize.width + rightTitleIconSpacing
             }
@@ -1575,6 +1599,11 @@ public final class ChatTitleComponent: Component {
                 nextRightIconX += statusIconsSpacing + statusIconSize.width
             }
             
+            if conceptWidth > 0.0 {
+                transition.setFrame(view: self.conceptBadge, frame: CGRect(x: nextRightIconX + statusIconsSpacing, y: titleFrame.midY - 10.0, width: conceptWidth, height: 20.0))
+                nextRightIconX += statusIconsSpacing + conceptWidth
+            }
+
             if let rightIconSize, let rightIconView = self.rightIcon?.view {
                 let rightIconFrame = CGRect(origin: CGPoint(x: nextRightIconX + rightTitleIconSpacing, y: titleFrame.minY + 5.0), size: rightIconSize)
                 if rightIconView.superview == nil {

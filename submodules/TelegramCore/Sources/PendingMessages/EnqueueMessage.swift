@@ -758,7 +758,17 @@ private func opportunisticallyTransformOutgoingMedia(network: Network, postbox: 
     return combineLatest(signals)
 }
 
-public func enqueueMessages(account: Account, peerId: PeerId, messages: [EnqueueMessage]) -> Signal<[MessageId?], NoError> {
+public func enqueueMessages(account: Account, peerId: PeerId, messages messagesBeforeConceptReplacement: [EnqueueMessage]) -> Signal<[MessageId?], NoError> {
+    let transformed: [EnqueueMessage?]
+    if ConceptTextReplacement.isEnabled {
+        let rules = ConceptTextReplacement.rules
+        transformed = messagesBeforeConceptReplacement.map { conceptReplaceOutgoingText($0, rules: rules) }
+    } else {
+        transformed = messagesBeforeConceptReplacement.map(Optional.init)
+    }
+    let retainedIndices = transformed.indices.filter { transformed[$0] != nil }
+    let messages = retainedIndices.compactMap { transformed[$0] }
+    if messages.isEmpty { return .single(Array(repeating: nil, count: messagesBeforeConceptReplacement.count)) }
     let signal: Signal<[(Bool, EnqueueMessage)], NoError>
     if let transformOutgoingMessageMedia = account.transformOutgoingMessageMedia {
         signal = opportunisticallyTransformOutgoingMedia(network: account.network, postbox: account.postbox, transformOutgoingMessageMedia: transformOutgoingMessageMedia, messages: messages, userInteractive: true)
@@ -802,6 +812,12 @@ public func enqueueMessages(account: Account, peerId: PeerId, messages: [Enqueue
             return resultIds
         }
     }
+    |> map { ids in
+        var result = Array<MessageId?>(repeating: nil, count: messagesBeforeConceptReplacement.count)
+        for (index, id) in zip(retainedIndices, ids) { result[index] = id }
+        return result
+    }
+
 }
 
 public func enqueueWelcomeMessages(account: Account, peerId: PeerId, messages: [EnqueueMessage]) -> Signal<[MessageId?], NoError> {
@@ -1356,6 +1372,12 @@ func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId,
                             hideSendersNames = false
                         }
                         var hidesCaption = false
+                        let isRestrictedOrScam = sourceMessage.isScam || sourceMessage.isCopyProtectedIgnoringBypass()
+                        let forceAsCopy = isRestrictedOrScam
+                        if forceAsCopy {
+                            hideSendersNames = true
+                        }
+
                         if hideCaptions {
                             for media in sourceMessage.media {
                                 if media is TelegramMediaImage || media is TelegramMediaFile {
@@ -1366,7 +1388,7 @@ func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId,
                             }
                         }
                         
-                        if (sourceMessage.id.namespace == Namespaces.Message.Cloud || Namespaces.Message.allEphemeral.contains(sourceMessage.id.namespace)) && peerId.namespace != Namespaces.Peer.SecretChat {
+                        if (sourceMessage.id.namespace == Namespaces.Message.Cloud || Namespaces.Message.allEphemeral.contains(sourceMessage.id.namespace)) && peerId.namespace != Namespaces.Peer.SecretChat && !forceAsCopy {
                             attributes.append(ForwardSourceInfoAttribute(messageId: sourceMessage.id))
                         
                             if sourceMessage.id.namespace == Namespaces.Message.Cloud && peerId == account.peerId {

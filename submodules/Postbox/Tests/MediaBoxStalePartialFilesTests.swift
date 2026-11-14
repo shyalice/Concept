@@ -296,6 +296,42 @@ final class MediaBoxStalePartialFilesTests: XCTestCase {
         self.drainDataQueue()
     }
 
+    func testKeptCompleteResourceSurvivesAutomaticEvictionAndAllowsExplicitClear() {
+        let id = MediaResourceId("kept-complete")
+        let data = Data([1, 2, 3, 4])
+        self.mediaBox.storeResourceData(id, data: data, synchronous: true)
+        let lease = self.mediaBox.keepResource(id: id).start()
+        self.drainDataQueue()
+        defer { lease.dispose() }
+
+        self.removeCachedResource(id, force: false)
+        XCTAssertEqual(try? Data(contentsOf: URL(fileURLWithPath: self.path("kept-complete"))), data)
+
+        self.removeCachedResource(id, force: true)
+        XCTAssertFalse(self.exists(self.path("kept-complete")))
+    }
+
+    func testReleasingLastResourceLeaseAllowsAutomaticEviction() {
+        let id = MediaResourceId("released-complete")
+        self.mediaBox.storeResourceData(id, data: Data([1, 2, 3, 4]), synchronous: true)
+        let lease = self.mediaBox.keepResource(id: id).start()
+        self.drainDataQueue()
+        lease.dispose()
+        self.drainDataQueue()
+
+        self.removeCachedResource(id, force: false)
+        XCTAssertFalse(self.exists(self.path("released-complete")))
+    }
+
+    private func removeCachedResource(_ id: MediaResourceId, force: Bool) {
+        let semaphore = DispatchSemaphore(value: 0)
+        let disposable = self.mediaBox.removeCachedResources([id], force: force).start(completed: {
+            semaphore.signal()
+        })
+        XCTAssertEqual(semaphore.wait(timeout: .now() + 10.0), .success)
+        disposable.dispose()
+    }
+
     func testSymlinksAndDirectoriesNamedLikePartialsAreKept() {
         XCTAssertTrue(FileManager.default.createFile(atPath: self.path("target"), contents: nil))
         XCTAssertEqual(symlink(self.path("target"), self.path("linked_partial")), 0)

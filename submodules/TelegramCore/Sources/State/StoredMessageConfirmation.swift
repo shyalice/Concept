@@ -211,9 +211,11 @@ func confirmStoredMessages(accountPeerId: PeerId, postbox: Postbox, source: Fetc
 /// Returns the ids it deleted: the private-chat and basic-group ones, then the channel ones, each in the order given.
 @discardableResult
 func deleteStoredMessagesAsReceivedDeletion(transaction: Transaction, mediaBox: MediaBox, ids: [MessageId]) -> [MessageId] {
+    transaction.recordMessageDeletions(ids)
+    let remaining = _internal_conceptRetainDeletedMessages(transaction: transaction, ids: ids)
     var regularIds: [MessageId] = []
     var channelIds: [MessageId] = []
-    for id in ids {
+    for id in remaining {
         if id.peerId.namespace == Namespaces.Peer.CloudChannel {
             channelIds.append(id)
         } else {
@@ -234,7 +236,8 @@ func deleteStoredMessagesAsReceivedDeletion(transaction: Transaction, mediaBox: 
         _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: channelIds)
     }
 
-    let deletedIds = regularIds + channelIds
+    // Report the server's deletions even when Concept keeps their local content.
+    let deletedIds = ids.filter { $0.peerId.namespace != Namespaces.Peer.CloudChannel } + ids.filter { $0.peerId.namespace == Namespaces.Peer.CloudChannel }
     // The received-deletion events (owner decision D1): reported inside this transaction, as the replay reports
     // its deletions inside its own; the deletedMessages pipe fires once it has committed.
     StoredMessageConfirmationDeletionReporters.shared.report(deletedIds, mediaBox: mediaBox, transaction: transaction)

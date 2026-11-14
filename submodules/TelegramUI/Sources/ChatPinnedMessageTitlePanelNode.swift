@@ -307,7 +307,7 @@ final class ChatPinnedMessageTitlePanelNode: ChatTitleAccessoryPanelNode {
         // The skeleton is inert: no tap, no long press.
         self.tapButton.isUserInteractionEnabled = !isSkeleton
         
-        self.captureProtected = interfaceState.copyProtectionEnabled || interfaceState.myCopyProtectionEnabled
+        self.captureProtected = (interfaceState.copyProtectionEnabled || interfaceState.myCopyProtectionEnabled) && !MiscSettingsManager.shared.shouldBypassScreenshotProtection
         
         self.contextContainer.isGestureEnabled = !isReplyThread && !isSkeleton
         

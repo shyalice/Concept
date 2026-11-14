@@ -20,7 +20,7 @@
 /* Example: Hide "All Chats" */
 "Settings.Folders.AllChatsHidden" = "Hide \"%@\"";
 "Settings.Folders.RememberLast" = "Open Last Folder";
-"Settings.Folders.RememberLast.Notice" = "Swiftgram will open the last used folder when you restart the app or switch accounts.";
+"Settings.Folders.RememberLast.Notice" = "Concept will open the last used folder when you restart the app or switch accounts.";
 
 "Settings.Folders.CompactNames" = "Smaller spacing";
 "Settings.Folders.AllChatsTitle" = "\"All Chats\" title";
@@ -51,7 +51,7 @@
 /* Do not translate */
 "Settings.Translation.Backend.gtranslate" = "GTranslate";
 "Settings.Translation.Backend.system" = "System";
-"Settings.Translation.Backend.Notice" = "Swiftgram will fallback to %@ if selected translation service is not available.";
+"Settings.Translation.Backend.Notice" = "Concept will fallback to %@ if selected translation service is not available.";
 
 "Settings.Transcription.Header" = "VOICE-TO-TEXT";
 "Settings.Transcription.Backend" = "Service";
@@ -59,7 +59,7 @@
 "Settings.Transcription.Backend.default" = "Telegram";
 /* Do not translate */
 "Settings.Transcription.Backend.apple" = "Apple";
-"Settings.Transcription.Backend.Notice" = "Swiftgram will fallback to %@ if selected transcription service is not available.";
+"Settings.Transcription.Backend.Notice" = "Concept will fallback to %@ if selected transcription service is not available.";
 
 "Stories.Warning.Author" = "Author";
 "Stories.Warning.ViewStory" = "View Story?";
@@ -108,7 +108,7 @@
 "Common.RestartRequired" = "Restart required";
 "Common.RestartNow" = "Restart Now";
 "Common.OpenTelegram" = "Open Telegram";
-"Common.UseTelegramForPremium" = "Please note that to get Telegram Premium, you must use the official Telegram app. Once you have obtained Telegram Premium, all its features will become available in Swiftgram.";
+"Common.UseTelegramForPremium" = "Please note that to get Telegram Premium, you must use the official Telegram app. Once you have obtained Telegram Premium, all its features will become available in Concept.";
 "Common.UpdateOS" = "iOS update required";
 "Common.KnowWhatYouDo" = "Please, change these settings only if you know what they do.";
 
@@ -124,7 +124,7 @@
 "ContextMenu.SelectFromUser" = "Select from Author";
 
 "Settings.ContextMenu" = "CONTEXT MENU";
-"Settings.ContextMenu.Notice" = "Disabled entries will be available in \"Swiftgram\" sub-menu.";
+"Settings.ContextMenu.Notice" = "Disabled entries will be available in \"Concept\" sub-menu.";
 
 
 "Settings.ChatSwipeOptions" = "Chat List Swipe Options";
@@ -174,7 +174,7 @@
 "Settings.secondsInMessages" = "Seconds in Messages";
 
 "Settings.CallConfirmation" = "Call Confirmation";
-"Settings.CallConfirmation.Notice" = "Swiftgram will ask for your confirmation before making a call.";
+"Settings.CallConfirmation.Notice" = "Concept will ask for your confirmation before making a call.";
 
 /* Confirmation before making a Call */
 "CallConfirmation.Audio.Title" = "Make a Call?";
@@ -202,11 +202,11 @@
 "SessionBackup.LoggedIn" = "Logged In";
 "SessionBackup.LoggedOut" = "Logged Out";
 "SessionBackup.DeleteAll.Title" = "Delete All Sessions?";
-"SessionBackup.DeleteAll.Text" = "All sessions will be removed from Keychain.\n\nAccounts will not be logged out from Swiftgram.";
+"SessionBackup.DeleteAll.Text" = "All sessions will be removed from Keychain.\n\nAccounts will not be logged out from Concept.";
 "SessionBackup.DeleteSingle.Title" = "Delete 1 (one) Session?";
-"SessionBackup.DeleteSingle.Text" = "%@ session will be removed from Keychain.\n\nAccount will not be logged out from Swiftgram.";
+"SessionBackup.DeleteSingle.Text" = "%@ session will be removed from Keychain.\n\nAccount will not be logged out from Concept.";
 "SessionBackup.RemoveFromApp.Title" = "Remove account from App?";
-"SessionBackup.RemoveFromApp.Text" = "%@ session WILL BE REMOVED from Swiftgram! Session will remain active, so you can restore it later.";
+"SessionBackup.RemoveFromApp.Text" = "%@ session WILL BE REMOVED from Concept! Session will remain active, so you can restore it later.";
 "SessionBackup.Notice" = "Sessions are encrypted and stored in the device Keychain. Sessions never leave your device.\n\nIMPORTANT: To restore sessions on a new device or after an OS reset, you MUST enable encrypted backups, otherwise Keychain won't be transfered.\n\nNOTE: Sessions may still be revoked by Telegram or from another device.";
 
 "AuthorizationError.Notice" = "Telegram logged out current session.";
@@ -292,3 +292,26 @@
 "Settings.NY.Style.lightning" = "Lightning";
 "Settings.NY.Notice" = "Available for a limited time only!";
 "Settings.HideAccountInNotifications" = "Hide Account in Notifications";
+"Message.EditHistory.Title" = "Edit History";
+"Message.EditHistory.Notice" = "Only versions received by this installation can be saved. Earlier edits and edits made while the client could not receive updates are unavailable.";
+"Message.EditHistory.Current" = "Current version";
+"Message.EditHistory.FirstObserved" = "First saved version";
+"Message.EditHistory.Version" = "Version";
+"Message.EditHistory.EmptyText" = "No text or caption";
+
+"Media.Export.Title" = "Save to Photos";
+"Media.Export.SavePurchased" = "Save Purchased Media";
+"Media.Export.Saving" = "Saving to Photos…";
+"Media.Export.Saved" = "Media saved to Photos.";
+"Media.Export.DownloadError" = "Could not download the media. Check your connection and try again. Files already saved will not be downloaded again.";
+"Media.Export.SaveError" = "Could not save the media. Check available storage and try again. Files already saved will not be saved again.";
+"Media.Export.Unsupported" = "This media format cannot be saved to Photos.";
+"Media.Export.Retry" = "Retry";
+
+"Media.Export.SaveAll" = "Save All to Photos";
+
+"Media.Export.Downloading" = "Downloading…";
+
+"Media.Export.Cancelled" = "Download cancelled. Files already saved remain in Photos.";
+
+"Media.Export.AccessDenied" = "Allow access to Photos in iOS Settings, then try again.";

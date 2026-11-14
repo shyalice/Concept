@@ -9,7 +9,7 @@ public typealias SGResetPresenter = (UIViewController, @escaping () -> Void) -> 
 
 private func sgDefaultDataPath() throws -> String {
     NSLog("[SG.DBReset] Resolving app-group container")
-    guard let appGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: sgAppGroupIdentifier()) else {
+    guard let appGroupUrl = sgAppGroupContainerURL() else {
         throw NSError(domain: "SG.DBReset", code: 2, userInfo: [NSLocalizedDescriptionKey: "The app-group container is unavailable. Unlock the device and restart the app to retry."])
     }
     return (appGroupUrl.path as NSString).appendingPathComponent("telegram-data")

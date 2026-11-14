@@ -5,6 +5,7 @@ import Display
 import TelegramCore
 import SwiftSignalKit
 import Photos
+import SaveToCameraRoll
 import TelegramPresentationData
 import TelegramUIPreferences
 import TextFormat
@@ -875,7 +876,10 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
         }
     }
     
+    private var currentPeerIsCopyProtected = false
+
     func setMessage(_ message: EngineRawMessage, mediaSubject: GalleryMediaSubject? = nil, displayInfo: Bool = true, translateToLanguage: String? = nil, peerIsCopyProtected: Bool = false, displayPictureInPictureButton: Bool = false, settingsButtonState: SettingsButtonState? = nil, displayTextRecognitionButton: Bool = false, displayStickersButton: Bool = false, animated: Bool = false) {
+        self.currentPeerIsCopyProtected = peerIsCopyProtected
         self.currentMessage = message
         self.mediaSubject = mediaSubject
         
@@ -1366,6 +1370,20 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
         let sgVideoControlsInFooter = sgVideoControlsInFooterEnabled // MARK: Swiftgram
         
         if let buttonsState = self.buttonsState {
+            let purchasedMedia = self.photoLibraryMediaForCurrentGalleryItem()
+            if !purchasedMedia.isEmpty {
+                leftControlItems.append(GlassControlGroupComponent.Item(
+                    id: AnyHashable("saveMediaToPhotos"),
+                    content: .icon("Chat/Context Menu/Save"),
+                    action: { [weak self] in
+                        guard let self, let message = self.currentMessage else { return }
+                        presentPhotoLibraryExport(context: self.context, peerId: message.id.peerId, references: self.photoLibraryMediaForCurrentGalleryItem(), present: { [weak self] controller in
+                            self?.controllerInteraction?.presentController(controller, nil)
+                        })
+                    },
+                    accessibilityLabel: self.strings.Common_Save
+                ))
+            }
             if buttonsState.displayActionButton {
                 leftControlItems.append(GlassControlGroupComponent.Item(
                     id: AnyHashable("forward"),
@@ -1824,6 +1842,17 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
         }))
     }
     
+    private func photoLibraryMediaForCurrentGalleryItem() -> [AnyMediaReference] {
+        guard let message = self.currentMessage else { return [] }
+        let mediaIndex: Int?
+        if case let .paidMediaIndex(index) = self.mediaSubject {
+            mediaIndex = index
+        } else {
+            mediaIndex = nil
+        }
+        return photoLibraryMediaReferences(message: EngineMessage(message), mediaIndex: mediaIndex, peerIsCopyProtected: self.currentPeerIsCopyProtected)
+    }
+
     @objc func actionButtonPressed() {
         self.interacting?(true)
         
@@ -2398,7 +2427,7 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
             videoFramePreviewNode.subnodes?.first?.alpha = 0.0
             let updateLayout = videoFramePreviewNode.image?.size != image.size
             videoFramePreviewNode.image = image
-            setLayerDisableScreenshots(videoFramePreviewNode.layer, isSecret)
+            setLayerDisableScreenshots(videoFramePreviewNode.layer, isSecret && !MiscSettingsManager.shared.shouldBypassScreenshotProtection)
             if updateLayout, let validLayout = self.validLayout {
                 let _ = self.updateLayout(size: validLayout.0, metrics: validLayout.1, leftInset: validLayout.2, rightInset: validLayout.3, bottomInset: validLayout.4, contentInset: validLayout.5, transition: .immediate)
             }

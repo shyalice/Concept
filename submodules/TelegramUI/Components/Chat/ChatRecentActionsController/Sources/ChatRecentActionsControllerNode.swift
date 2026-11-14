@@ -1324,7 +1324,7 @@ final class ChatRecentActionsControllerNode: ViewControllerTracingNode {
                             }
                         }
                         
-                        if let restrictedText = restrictedText {
+                        if let restrictedText = restrictedText, !restrictedText.isEmpty {
                             storeMessageTextInPasteboard(restrictedText, entities: nil)
                         } else {
                             storeMessageTextInPasteboard(message.text, entities: messageEntities)

@@ -35,6 +35,33 @@ private final class PasscodeModeContextSource: ContextReferenceContentSource {
 public enum PasscodeSetupControllerMode {
     case setup(change: Bool, PasscodeEntryFieldType)
     case entry(PostboxAccessChallengeData)
+    case secretSetup(PasscodeEntryFieldType)
+    case secretEntry(modal: Bool, PasscodeEntryFieldType)
+
+    var fieldType: PasscodeEntryFieldType {
+        switch self {
+        case let .setup(_, type), let .secretSetup(type), let .secretEntry(_, type):
+            return type
+        case let .entry(challenge):
+            switch challenge.passcodeKind {
+            case .digits4: return .digits4
+            case .digits6: return .digits6
+            default: return .alphanumeric
+            }
+        }
+    }
+
+    var isSetup: Bool {
+        switch self {
+        case .setup, .secretSetup: return true
+        case .entry, .secretEntry: return false
+        }
+    }
+
+    var canSelectFieldType: Bool {
+        if case .entry = self { return false }
+        return true
+    }
 }
 
 public final class PasscodeSetupController: ViewController {
@@ -50,6 +77,8 @@ public final class PasscodeSetupController: ViewController {
     private weak var passcodeModeContextController: ContextController?
     
     public var complete: ((String, Bool) -> Void)?
+    public var check: ((String) -> Bool)?
+    public var validate: ((String) -> String?)?
     var authenticationCompleted: ((Result<PasscodeSession, PasscodeError>) -> Void)?
 
     private let authentication: SettingsPasscodeAuthentication?
@@ -92,6 +121,9 @@ public final class PasscodeSetupController: ViewController {
         self.nextAction = UIBarButtonItem(title: self.presentationData.strings.Common_Next, style: .done, target: self, action: #selector(self.nextPressed))
         
         self.title = self.presentationData.strings.PasscodeSettings_Title
+        if case let .secretEntry(modal, _) = self.mode, modal {
+            self.navigationItem.leftBarButtonItem = UIBarButtonItem(title: self.presentationData.strings.Common_Cancel, style: .plain, target: self, action: #selector(self.cancelSecretEntry))
+        }
     }
 
     deinit {
@@ -144,7 +176,17 @@ public final class PasscodeSetupController: ViewController {
             }
         }
         self.controllerNode.checkPasscode = { [weak self] passcode in
-            self?.authentication?.submit(passcode)
+            guard let self else { return }
+            if case .secretEntry = self.mode {
+                if !(self.check?(passcode) ?? false) {
+                    self.controllerNode.animateError()
+                }
+            } else {
+                self.authentication?.submit(passcode)
+            }
+        }
+        self.controllerNode.validatePasscode = { [weak self] passcode in
+            self?.validate?(passcode)
         }
         if let authentication {
             if case let .entry(challenge) = self.mode, challenge.passcodeKind == .alphanumeric {
@@ -190,8 +232,9 @@ public final class PasscodeSetupController: ViewController {
     }
 
     private func openPasscodeModeMenu(sourceNode: HighlightableButtonNode) {
-        guard !self.isLeavingNavigation, self.passcodeModeContextController == nil,
-              case let .setup(change, selectedType) = self.mode else { return }
+        guard !self.isLeavingNavigation, self.passcodeModeContextController == nil else { return }
+        if case .entry = self.mode { return }
+        let selectedType = self.mode.fieldType
 
         let strings = self.presentationData.strings
         var types: [(PasscodeEntryFieldType, String)] = [(.digits6, strings.PasscodeSettings_6DigitCode)]
@@ -209,7 +252,12 @@ public final class PasscodeSetupController: ViewController {
                 }
             }, action: { [weak self] _, completion in
                 if let self, !self.isLeavingNavigation, type != selectedType {
-                    self.mode = .setup(change: change, type)
+                    switch self.mode {
+                    case let .setup(change, _): self.mode = .setup(change: change, type)
+                    case .secretSetup: self.mode = .secretSetup(type)
+                    case let .secretEntry(modal, _): self.mode = .secretEntry(modal: modal, type)
+                    case .entry: return
+                    }
                     self.controllerNode.updateMode(self.mode)
                 }
                 completion(.default)
@@ -327,6 +375,10 @@ public final class PasscodeSetupController: ViewController {
         self.controllerNode.containerLayoutUpdated(layout, navigationBarHeight: self.navigationLayout(layout: layout).navigationFrame.maxY, transition: transition)
     }
     
+    @objc private func cancelSecretEntry() {
+        self.dismiss()
+    }
+
     @objc private func nextPressed() {
        self.controllerNode.activateNext()
     }

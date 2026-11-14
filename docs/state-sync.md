@@ -1112,3 +1112,32 @@ gets a shrunk test before its fix. The comparison with master, and every model r
   `docs/superpowers/specs/2026-10-15-difference-too-long-design.md` (the differenceTooLong rules).
 - `docs/superpowers/plans/`: the stage plans, kept as history.
 - `docs/superpowers/plans/2026-10-14-state-sync-foundation/followups.md`: what each stage parked.
+# Concept local retention overlay
+
+Concept's received-deletion handling calls `_internal_conceptRetainDeletedMessages`
+from replay, the notification service, history validation and confirmed missing
+messages (including reset reconciliation). A retained cloud message stays in its account Postbox with
+`DeletedMessageAttribute`; the deletion is still recorded in RecentlyDeletedMessages
+so an in-flight stale history response cannot resurrect it. Non-cloud messages and
+disabled retention continue through normal deletion. The deletion archive uses a
+local ordered list (collection 900) in that same transaction, keyed by the full
+peer/namespace/message identity. Its migration marker survives archive clearing.
+
+The notification service stores decrypted ordinary-message previews in a bounded
+account-local ordered list (collection 901, latest 5000), before polling the network.
+Reactions, stories and service payloads are excluded. A deletion of an unfetched
+message archives only that preview, explicitly marked partial; it never creates a
+fake cloud message or changes read state. Non-channel previews can also be found
+from an account-global deletion id. Once archived, the pending preview is removed
+so clearing the archive cannot re-import it on a duplicate deletion.
+
+`SeedConfiguration.mergeMessageContentAttributes` captures observed edit versions
+at MessageHistoryTable replacement, including replacements from notification
+processing and history fills. Counter/read/reaction updates reuse the encoded
+history unchanged. Both retained attributes are registered in AccountManager's
+codec initialization.
+
+Validation is incomplete: full state-sync suites/truth-server runs, reset and
+confirmation integration tests, extension payload fallback capture and on-device
+notification delivery remain to be exercised. Generic upstream sync
+expectations must explicitly distinguish retention-enabled behavior.

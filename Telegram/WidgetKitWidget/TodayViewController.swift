@@ -2,6 +2,7 @@
 
 import UIKit
 import PasscodeCore
+import SGAppGroupIdentifier
 import NotificationCenter
 import BuildConfig
 import WidgetItems
@@ -81,9 +82,9 @@ private func getCommonTimeline(friends: [Friend]?, in context: TimelineProviderC
     
     let baseAppBundleId = String(appBundleIdentifier[..<lastDotRange.lowerBound])
     
-    let appGroupName = "group.\(baseAppBundleId)"
+    let appGroupName = sgAppGroupIdentifier()
     try! PasscodeEnvironment.shared.configure(PasscodeConfiguration(appGroupIdentifier: appGroupName, processRole: .appExtension))
-    let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
+    let maybeAppGroupUrl = sgAppGroupContainerURL()
     
     guard let appGroupUrl = maybeAppGroupUrl else {
         completion(Timeline(entries: [SimpleEntry(date: entryDate, contents: .recent)], policy: .atEnd))

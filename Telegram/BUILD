@@ -61,6 +61,7 @@ load(
     "telegram_bazel_path",
     "telegram_use_xcode_managed_codesigning",
     "telegram_bundle_id",
+    "telegram_app_specific_url_scheme",
     "telegram_aps_environment",
     "telegram_team_id",
     "telegram_enable_icloud",
@@ -323,6 +324,11 @@ filegroup(
 
 # MARK: Swiftgram alternative icons
 alternate_icon_folders = [
+    "ConceptDefault",
+    "ConceptSky",
+    "ConceptWhite",
+    "ConceptOrange",
+    "ConceptPurple",
     "SGDefault",
     "SGBlack",
     "SGLegacy",
@@ -459,11 +465,13 @@ plist_fragment(
             <key>CFBundleURLSchemes</key>
             <array>
                 <string>sg</string>
+                <string>{telegram_app_specific_url_scheme}</string>
             </array>
         </dict>
     </array>
     """.format(
         telegram_bundle_id = telegram_bundle_id,
+        telegram_app_specific_url_scheme = telegram_app_specific_url_scheme,
     )
 )
 #
@@ -624,6 +632,23 @@ plist_fragment(
     ])
 )
 
+extension_entitlements_fragment = """
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.{telegram_bundle_id}</string>
+    </array>
+""".format(
+    telegram_bundle_id=telegram_bundle_id
+)
+
+plist_fragment(
+    name = "ExtensionEntitlements",
+    extension = "entitlements",
+    template = "".join([
+        extension_entitlements_fragment,
+    ])
+)
+
 genrule(
     name = "VersionInfoPlist",
     srcs = ["//:versions.json"],
@@ -662,7 +687,7 @@ plist_fragment(
     template =
     """
     <key>CFBundleDisplayName</key>
-    <string>Swiftgram</string>
+    <string>Concept</string>
     """
 )
 #
@@ -1063,7 +1088,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.Share</string>
     <key>CFBundleName</key>
-    <string>Swiftgram</string>
+    <string>Concept</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1116,24 +1141,13 @@ swift_library(
     deps = [
         "//submodules/TelegramUI",
         "//submodules/PasscodeCore",
-        "//submodules/TelegramUI/Components/ShareExtensionContext"
+        "//submodules/TelegramUI/Components/ShareExtensionContext",
+        "//Swiftgram/SGAppGroupIdentifier:SGAppGroupIdentifier"
     ],
-)
-
-plist_fragment(
-    name = "ShareExtensionEntitlements",
-    extension = "entitlements",
-    template = """
-<key>com.apple.security.application-groups</key>
-<array>
-    <string>group.{telegram_bundle_id}</string>
-</array>
-""".format(telegram_bundle_id = telegram_bundle_id),
 )
 
 ios_extension(
     name = "ShareExtension",
-    entitlements = ":ShareExtensionEntitlements.entitlements",
     bundle_id = "{telegram_bundle_id}.Share".format(
         telegram_bundle_id = telegram_bundle_id,
     ),
@@ -1149,6 +1163,7 @@ ios_extension(
         ":AppNameInfoPlist",
     ],
     minimum_os_version = minimum_os_version,
+    entitlements = ":ExtensionEntitlements.entitlements",
     provisioning_profile = select({
         ":disableProvisioningProfilesSetting": None,
         "//conditions:default": "@build_configuration//provisioning:Share.mobileprovision",
@@ -1170,7 +1185,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.NotificationContent</string>
     <key>CFBundleName</key>
-    <string>Swiftgram</string>
+    <string>Concept</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1216,6 +1231,7 @@ swift_library(
         "-warnings-as-errors",
     ],
     deps = [
+        "//Swiftgram/SGAppGroupIdentifier:SGAppGroupIdentifier",
         "//submodules/TelegramUI:TelegramUI",
         "//submodules/PasscodeCore",
         ":NotificationContentExtensionLink",
@@ -1258,6 +1274,7 @@ ios_extension(
         ":AppNameInfoPlist",
     ],
     minimum_os_version = minimum_os_version, # maintain the same minimum OS version across extensions
+    entitlements = ":ExtensionEntitlements.entitlements",
     #ipa_post_processor = ":SetMinOsVersionNotificationContentExtension",
     provisioning_profile = select({
         ":disableProvisioningProfilesSetting": None,
@@ -1280,7 +1297,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.Widget</string>
     <key>CFBundleName</key>
-    <string>Swiftgram</string>
+    <string>Concept</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1317,6 +1334,7 @@ swift_library(
         ":WidgetAssets",
     ],
     deps = [
+        "//Swiftgram/SGAppGroupIdentifier:SGAppGroupIdentifier",
         "//submodules/BuildConfig:BuildConfig",
         "//submodules/WidgetItems:WidgetItems_iOS14",
         "//submodules/WidgetItemsUtils:WidgetItemsUtils",
@@ -1365,6 +1383,7 @@ ios_extension(
         ":AppNameInfoPlist",
     ],
     minimum_os_version = minimum_os_version, # maintain the same minimum OS version across extensions
+    entitlements = ":ExtensionEntitlements.entitlements",
     # Deliberately NOT patched down: this used to stamp MinimumOSVersion=14.0 so a WidgetKit
     # extension could ship while the app min was 13.0. Now that the app min is >= 14, stamping
     # a plist minimum *below* the binary's minos makes App Store validation reject the bundle
@@ -1399,7 +1418,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.SiriIntents</string>
     <key>CFBundleName</key>
-    <string>Swiftgram</string>
+    <string>Concept</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1460,6 +1479,7 @@ swift_library(
         ":IntentsAssets"
     ],
     deps = [
+        "//Swiftgram/SGAppGroupIdentifier:SGAppGroupIdentifier",
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
         "//submodules/Postbox:Postbox",
         "//submodules/TelegramCore:TelegramCore",
@@ -1540,6 +1560,7 @@ ios_extension(
         ":AppNameInfoPlist",
     ],
     minimum_os_version = minimum_os_version, # maintain the same minimum OS version across extensions
+    entitlements = ":ExtensionEntitlements.entitlements",
     #ipa_post_processor = ":SetMinOsVersionIntentsExtension",
     provisioning_profile = select({
         ":disableProvisioningProfilesSetting": None,
@@ -1565,9 +1586,9 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.SGActionRequestHandler</string>
     <key>CFBundleName</key>
-    <string>Swiftgram</string>
+    <string>Concept</string>
     <key>CFBundleDisplayName</key>
-    <string>Open in Swiftgram</string>
+    <string>Open in Concept</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
 	<key>NSExtension</key>
@@ -1705,7 +1726,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.BroadcastUpload</string>
     <key>CFBundleName</key>
-    <string>Swiftgram</string>
+    <string>Concept</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1733,6 +1754,7 @@ swift_library(
         "-warnings-as-errors",
     ],
     deps = [
+        "//Swiftgram/SGAppGroupIdentifier:SGAppGroupIdentifier",
         "//submodules/TelegramUI:TelegramUI",
         "//submodules/TelegramVoip:TelegramVoip",
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
@@ -1778,6 +1800,7 @@ ios_extension(
         ":AppNameInfoPlist",
     ],
     minimum_os_version = minimum_os_version, # maintain the same minimum OS version across extensions
+    entitlements = ":ExtensionEntitlements.entitlements",
     #ipa_post_processor = ":SetMinOsVersionBroadcastUploadExtension",
     provisioning_profile = select({
         ":disableProvisioningProfilesSetting": None,
@@ -1801,7 +1824,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.NotificationService</string>
     <key>CFBundleName</key>
-    <string>Swiftgram</string>
+    <string>Concept</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1841,6 +1864,7 @@ ios_extension(
         ":AppNameInfoPlist",
     ],
     minimum_os_version = minimum_os_version, # maintain the same minimum OS version across extensions
+    entitlements = ":ExtensionEntitlements.entitlements",
     provisioning_profile = select({
         ":disableProvisioningProfilesSetting": None,
         "//conditions:default": "@build_configuration//provisioning:NotificationService.mobileprovision",
@@ -1872,11 +1896,11 @@ plist_fragment(
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>Swiftgram</string>
+    <string>Concept</string>
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}</string>
     <key>CFBundleName</key>
-    <string>Swiftgram</string>
+    <string>Concept</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleSignature</key>
@@ -1934,17 +1958,17 @@ plist_fragment(
     <key>NSCameraUsageDescription</key>
     <string>We need this so that you can take and share photos and videos.</string>
     <key>NSContactsUsageDescription</key>
-    <string>Swiftgram stores your contacts heavily encrypted in the Telegram cloud to let you connect with your friends across all your devices.</string>
+    <string>Concept stores your contacts heavily encrypted in the Telegram cloud to let you connect with your friends across all your devices.</string>
     <key>NSFaceIDUsageDescription</key>
     <string>You can use Face ID to unlock the app.</string>
     <key>NSLocationAlwaysUsageDescription</key>
-    <string>When you send your location to your friends, Swiftgram needs access to show them a map. You also need this to send locations from an Apple Watch.</string>
+    <string>When you send your location to your friends, Concept needs access to show them a map. You also need this to send locations from an Apple Watch.</string>
     <key>NSLocationWhenInUseUsageDescription</key>
-    <string>When you send your location to your friends, Swiftgram needs access to show them a map.</string>
+    <string>When you send your location to your friends, Concept needs access to show them a map.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>We need this so that you can record and share voice messages and videos with sound.</string>
     <key>NSMotionUsageDescription</key>
-    <string>When you send your location to your friends, Swiftgram needs access to show them a map.</string>
+    <string>When you send your location to your friends, Concept needs access to show them a map.</string>
     <key>NSPhotoLibraryAddUsageDescription</key>
     <string>We need this so that you can share photos and videos from your photo library.</string>
     <key>NSPhotoLibraryUsageDescription</key>

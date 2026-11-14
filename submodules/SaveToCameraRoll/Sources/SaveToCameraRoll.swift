@@ -15,6 +15,11 @@ public enum FetchMediaDataState {
 }
 
 public func fetchMediaData(context: AccountContext, userLocation: MediaResourceUserLocation, customUserContentType: MediaResourceUserContentType? = nil, mediaReference: AnyMediaReference, forceVideo: Bool = false) -> Signal<(FetchMediaDataState, Bool), NoError> {
+    return fetchMediaDataWithErrors(context: context, userLocation: userLocation, customUserContentType: customUserContentType, mediaReference: mediaReference, forceVideo: forceVideo)
+    |> `catch` { _ in .complete() }
+}
+
+public func fetchMediaDataWithErrors(context: AccountContext, userLocation: MediaResourceUserLocation, customUserContentType: MediaResourceUserContentType? = nil, mediaReference: AnyMediaReference, forceVideo: Bool = false) -> Signal<(FetchMediaDataState, Bool), SaveMediaToPhotoLibraryError> {
     var resource: TelegramMediaResource?
     var isImage = true
     var fileExtension: String?
@@ -55,12 +60,14 @@ public func fetchMediaData(context: AccountContext, userLocation: MediaResourceU
 
     if let resource = resource {
         let engineResource = EngineMediaResource(resource)
-        let fetchedData: Signal<FetchMediaDataState, NoError> = Signal { subscriber in
+        let fetchedData: Signal<FetchMediaDataState, SaveMediaToPhotoLibraryError> = Signal { subscriber in
             let fetched = context.engine.resources.fetch(
                 reference: mediaReference.resourceReference(resource),
                 userLocation: userLocation,
                 userContentType: userContentType
-            ).start()
+            ).start(error: { _ in
+                subscriber.putError(.downloadFailed)
+            })
             let status = context.engine.resources.status(resource: engineResource).start(next: { status in
                 switch status {
                     case .Local:
@@ -93,7 +100,7 @@ public func fetchMediaData(context: AccountContext, userLocation: MediaResourceU
             return (data, isImage)
         }
     } else {
-        return .complete()
+        return .fail(.unsupportedMedia)
     }
 }
 

@@ -274,8 +274,10 @@ extension ReplayContext {
     }
     
     func applyDeleteMessagesWithGlobalIds(_ ids: [Int32]) {
+        transaction.recordMessageDeletions([], globalIds: ids)
+        let remaining = _internal_conceptRetainDeletedMessages(transaction: transaction, ids: conceptMessageIdsForReceivedGlobalDeletion(transaction: transaction, ids: ids))
         var resourceIds: [MediaResourceId] = []
-        transaction.deleteMessagesWithGlobalIds(ids, forEachMedia: { media in
+        transaction.deleteMessages(remaining, forEachMedia: { media in
             addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
         })
         if !resourceIds.isEmpty {
@@ -285,7 +287,9 @@ extension ReplayContext {
     }
     
     func applyDeleteMessages(_ ids: [MessageId]) {
-        _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: ids, manualAddMessageThreadStatsDifference: { id, add, remove in
+        transaction.recordMessageDeletions(ids)
+        let remaining = _internal_conceptRetainDeletedMessages(transaction: transaction, ids: ids)
+        _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: remaining, manualAddMessageThreadStatsDifference: { id, add, remove in
             self.addMessageThreadStatsDifference(threadKey: id, remove: remove, addedMessagePeer: nil, addedMessageId: nil, isOutgoing: false)
         })
         deletedMessageIds.append(contentsOf: ids.map { .messageId($0) })
@@ -296,9 +300,18 @@ extension ReplayContext {
             updatePeerChatInclusionWithMinTimestamp(transaction: transaction, id: id.peerId, minTimestamp: message.timestamp, forceRootGroupIfNotExists: false)
         }
         var resourceIds: [MediaResourceId] = []
-        transaction.deleteMessagesInRange(peerId: id.peerId, namespace: id.namespace, minId: 1, maxId: id.id, forEachMedia: { media in
-            addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
-        })
+        if AntiDeleteManager.shared.isEnabled, id.namespace == Namespaces.Message.Cloud, id.id >= 1 {
+            let ids = transaction.messageIdsInRange(peerId: id.peerId, namespace: id.namespace, range: 1 ... id.id, limit: 0)
+            transaction.recordMessageDeletions(ids)
+            let remaining = _internal_conceptRetainDeletedMessages(transaction: transaction, ids: ids)
+            transaction.deleteMessages(remaining, forEachMedia: { media in
+                addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
+            })
+        } else {
+            transaction.deleteMessagesInRange(peerId: id.peerId, namespace: id.namespace, minId: 1, maxId: id.id, forEachMedia: { media in
+                addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
+            })
+        }
         if !resourceIds.isEmpty {
             let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
         }

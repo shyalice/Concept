@@ -7,6 +7,7 @@ load(
 )
 
 sgdeps = [
+    "//submodules/ConceptNotifications:ConceptNotifications",
     "//Swiftgram/SGSettingsUI:SGSettingsUI",
     "//Swiftgram/SGConfig:SGConfig",
     "//Swiftgram/SGAPIWebSettings:SGAPIWebSettings",
@@ -21,6 +22,8 @@ sgdeps = [
     "//Swiftgram/SGDebugUI:SGDebugUI",
     "//Swiftgram/SGInputToolbar:SGInputToolbar",
     "//Swiftgram/SGIAP:SGIAP",
+    "//Swiftgram/ConceptSettings:ConceptSettings",
+    "//Swiftgram/ConceptSettingsUI:ConceptSettingsUI",
     "//Swiftgram/SGPayWall:SGPayWall",
     "//Swiftgram/SGProUI:SGProUI",
     "//Swiftgram/SGKeychainBackupManager:SGKeychainBackupManager",
@@ -103,7 +106,8 @@ swift_library(
         ],
         "//conditions:default": [],
     }),
-    deps = sgdeps + [ # MARK: Swiftgram
+    deps = sgdeps + [
+        "//submodules/ConceptBadges", # MARK: Swiftgram
         "//submodules/CrashReporting:CrashReporting",
         "//third-party/recaptcha:RecaptchaEnterprise",
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",

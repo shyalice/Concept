@@ -1,3 +1,4 @@
+import ConceptBadges
 import Foundation
 import UIKit
 import AsyncDisplayKit
@@ -187,6 +188,7 @@ public final class ChatTitleView: UIView, NavigationBarTitleView {
         case right
     }
     
+    private let conceptBadgeView = ConceptBadgeView()
     private let context: AccountContext
     
     /// An agent bot's chat shows its model under the title, and follows the composer's model chip.
@@ -907,6 +909,25 @@ public final class ChatTitleView: UIView, NavigationBarTitleView {
         self.button.frame = CGRect(origin: CGPoint(), size: size)
         self.contentContainer.frame = CGRect(origin: CGPoint(), size: size)
         
+        var conceptPeerKey: String?
+        if case let .peer(peerData, customTitle, _, _, scheduled, _, _, _, _) = self.titleContent,
+           customTitle == nil, !scheduled, let peer = peerData.peer,
+           peer.id != self.context.account.peerId,
+           !peer.isFake, !peer.isScam {
+            conceptPeerKey = peer.id.conceptBadgeKey
+        }
+        let conceptGlyphWidth = self.conceptBadgeView.update(peerId: conceptPeerKey, color: self.theme.list.itemAccentColor, height: 20)
+        self.conceptBadgeView.activated = { [weak self] userId in
+            guard let self, case let .peer(peerData, _, _, _, _, _, _, _, _) = self.titleContent, let peer = peerData.peer else { return }
+            presentConceptBadgeInfo(context: self.context, peerId: userId, userName: EnginePeer(peer).compactDisplayTitle)
+        }
+        let conceptBadgeWidth = conceptGlyphWidth > 0 ? conceptGlyphWidth + 3 : 0
+        if self.conceptBadgeView.superview == nil { self.titleTextNode.view.addSubview(self.conceptBadgeView) }
+        self.conceptBadgeView.changed = { [weak self] in
+            guard let self, let size = self.validLayout else { return }
+            if self.manualLayout { self.requestUpdate?(.immediate) } else { _ = self.updateLayout(availableSize: size, transition: .immediate) }
+        }
+
         var leftIconWidth: CGFloat = 0.0
         var rightIconWidth: CGFloat = 0.0
         var credibilityIconWidth: CGFloat = 0.0
@@ -1063,7 +1084,8 @@ public final class ChatTitleView: UIView, NavigationBarTitleView {
             titleInsets.left = verifiedIconWidth + inlineLeftIconWidth
         }
         
-        var titleSize = self.titleTextNode.updateLayout(size: CGSize(width: size.width - leftIconWidth - credibilityIconWidth - verifiedIconWidth - statusIconWidth - rightIconWidth - titleSideInset * 2.0, height: size.height), insets: titleInsets, animated: titleTransition.isAnimated)
+        var titleSize = self.titleTextNode.updateLayout(size: CGSize(width: size.width - conceptBadgeWidth - leftIconWidth - credibilityIconWidth - verifiedIconWidth - statusIconWidth - rightIconWidth - titleSideInset * 2.0, height: size.height), insets: titleInsets, animated: titleTransition.isAnimated)
+        titleSize.width += conceptBadgeWidth
         titleSize.width += credibilityIconWidth
         titleSize.width += verifiedIconWidth
         titleSize.width += inlineLeftIconWidth
@@ -1108,7 +1130,8 @@ public final class ChatTitleView: UIView, NavigationBarTitleView {
             titleTransition.updateFrame(node: self.titleLeftIconNode, frame: CGRect(origin: CGPoint(x: leftIconX, y: 4.0), size: image.size))
         }
         
-        var nextIconX: CGFloat = titleFrame.width
+        self.conceptBadgeView.frame = CGRect(x: titleFrame.width - conceptGlyphWidth, y: floor((titleFrame.height - 20) / 2), width: conceptGlyphWidth, height: 20)
+        var nextIconX: CGFloat = titleFrame.width - conceptBadgeWidth
         
         titleTransition.updateFrame(view: self.titleVerifiedIconView, frame: CGRect(origin: CGPoint(x: 0.0, y: floor((titleFrame.height - titleVerifiedSize.height) / 2.0)), size: titleVerifiedSize))
         
@@ -1161,6 +1184,9 @@ public final class ChatTitleView: UIView, NavigationBarTitleView {
     override public func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         if !self.isUserInteractionEnabled {
             return nil
+        }
+        if !self.conceptBadgeView.isHidden, self.conceptBadgeView.bounds.insetBy(dx: -3.0, dy: -6.0).contains(self.convert(point, to: self.conceptBadgeView)) {
+            return self.conceptBadgeView
         }
         if self.button.frame.contains(point) {
             return self.button.view

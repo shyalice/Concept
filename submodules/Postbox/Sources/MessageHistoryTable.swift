@@ -1631,6 +1631,7 @@ final class MessageHistoryTable: Table {
             
             var updatedAttributes = message.attributes
             self.seedConfiguration.mergeMessageAttributes(previousAttributes, &updatedAttributes)
+            self.seedConfiguration.mergeMessageContentAttributes(previousMessage.text, index.timestamp, previousAttributes, message.text, &updatedAttributes)
             
             self.valueBox.remove(self.table, key: self.key(index), secure: true)
             

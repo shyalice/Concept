@@ -75,6 +75,10 @@ public struct Namespaces {
     }
     
     public struct OrderedItemList {
+        /// Reserved for Concept's local archive, below application-specific ids (1000+).
+        public static let conceptDeletedMessages: Int32 = 900
+        public static let conceptNotificationPreviews: Int32 = 901
+        public static let conceptArchivedMediaPins: Int32 = 902
         public static let CloudRecentStickers: Int32 = 0
         public static let CloudRecentGifs: Int32 = 1
         public static let RecentlySearchedPeerIds: Int32 = 2

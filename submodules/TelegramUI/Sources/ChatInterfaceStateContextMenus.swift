@@ -43,6 +43,7 @@ import AdsInfoScreen
 import AdsReportScreen
 import WalletContext
 import WalletSendScreen
+import SGStrings
  
 private struct MessageContextMenuData {
     let starStatus: Bool?
@@ -672,7 +673,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                         }
                     }
                     
-                    if let restrictedText = restrictedText {
+                    if let restrictedText = restrictedText, !restrictedText.isEmpty {
                         storeMessageTextInPasteboard(restrictedText, entities: nil)
                     } else {
                         var translateToLang: String?
@@ -1399,7 +1400,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                                         }
                                     }
                                     
-                                    if let restrictedText = restrictedText {
+                                    if let restrictedText = restrictedText, !restrictedText.isEmpty {
                                         storeMessageTextInPasteboard(restrictedText, entities: nil)
                                     } else {
                                         var translateToLang: String?
@@ -1517,36 +1518,44 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
         }
         
-        if resourceAvailable, !message.containsSecretMedia && !isCopyProtected {
-            var mediaReference: AnyMediaReference?
-            var isVideo = false
-            for media in message.effectiveMedia {
-                if let image = media as? TelegramMediaImage, let _ = largestImageRepresentation(image.representations) {
-                    mediaReference = ImageMediaReference.standalone(media: image).abstract
-                    break
-                } else if let file = media as? TelegramMediaFile, file.isVideo {
-                    mediaReference = FileMediaReference.standalone(media: file).abstract
-                    isVideo = true
-                    break
-                }
-            }
-            if let mediaReference = mediaReference {
-                actions.append(.action(ContextMenuActionItem(text: isVideo ? chatPresentationInterfaceState.strings.Gallery_SaveVideo : chatPresentationInterfaceState.strings.Gallery_SaveImage, icon: { theme in
-                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Save"), color: theme.actionSheet.primaryTextColor)
-                }, action: { _, f in
-                    let _ = (saveToCameraRoll(context: context, userLocation: .peer(message.id.peerId), mediaReference: mediaReference)
-                             |> deliverOnMainQueue).startStandalone(completed: {
-                        Queue.mainQueue().after(0.2) {
-                            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
-                            controllerInteraction.presentControllerInCurrent(UndoOverlayController(presentationData: presentationData, content: .mediaSaved(text: isVideo ? presentationData.strings.Gallery_VideoSaved : presentationData.strings.Gallery_ImageSaved), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return true }), nil)
-                        }
+        let exportSelected = photoLibraryMediaReferences(message: EngineMessage(message), peerIsCopyProtected: chatPresentationInterfaceState.copyProtectionEnabled)
+        let exportAll = messages.sorted(by: { $0.id.id < $1.id.id }).flatMap { photoLibraryMediaReferences(message: EngineMessage($0), peerIsCopyProtected: chatPresentationInterfaceState.copyProtectionEnabled) }
+        let appendExportAction: (String, [AnyMediaReference]) -> Void = { title, references in
+            actions.append(.action(ContextMenuActionItem(text: title, icon: { theme in
+                return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Save"), color: theme.actionSheet.primaryTextColor)
+            }, action: { controller, completion in
+                let export = {
+                    presentPhotoLibraryExport(context: context, peerId: message.id.peerId, references: references, present: { controller in
+                        controllerInteraction.presentControllerInCurrent(controller, nil)
                     })
-                    f(.default)
-                })))
-                if !SGSimpleSettings.shared.contextShowSaveMedia { sgActions.append(actions.removeLast()) } // MARK: Swiftgram
-            }
+                }
+                if let controller {
+                    controller.dismiss(completion: export)
+                } else {
+                    completion(.default)
+                    export()
+                }
+            })))
         }
-        
+        if !exportSelected.isEmpty {
+            let title: String
+            if message.paidContent != nil {
+                title = i18n("Media.Export.SavePurchased", chatPresentationInterfaceState.strings.baseLanguageCode)
+            } else if exportSelected.first?.media is TelegramMediaImage {
+                title = chatPresentationInterfaceState.strings.Gallery_SaveImage
+            } else if let file = exportSelected.first?.media as? TelegramMediaFile, file.mimeType.hasPrefix("image/") {
+                title = chatPresentationInterfaceState.strings.Gallery_SaveImage
+            } else {
+                title = chatPresentationInterfaceState.strings.Gallery_SaveVideo
+            }
+            appendExportAction(title, exportSelected)
+            if !SGSimpleSettings.shared.contextShowSaveMedia { sgActions.append(actions.removeLast()) }
+        }
+        if messages.count > 1, exportAll.count > exportSelected.count {
+            appendExportAction(i18n("Media.Export.SaveAll", chatPresentationInterfaceState.strings.baseLanguageCode), exportAll)
+            if !SGSimpleSettings.shared.contextShowSaveMedia { sgActions.append(actions.removeLast()) }
+        }
+
         var downloadableMediaResourceInfos: [String] = []
         for media in message.effectiveMedia {
             if let file = media as? TelegramMediaFile {
@@ -1658,6 +1667,16 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
         }
         
+        if messages.count == 1, message.editedTime != nil || message.attributes.contains(where: { $0 is ConceptEditHistoryMessageAttribute }) {
+            actions.append(.action(ContextMenuActionItem(text: i18n("Message.EditHistory.Title", chatPresentationInterfaceState.strings.baseLanguageCode), icon: { theme in
+                return generateTintedImage(image: UIImage(systemName: "clock.arrow.circlepath"), color: theme.contextMenu.primaryColor)
+            }, action: { controller, _ in
+                controller?.dismiss(completion: {
+                    controllerInteraction.navigationController()?.pushViewController(conceptEditHistoryController(context: context, message: message), animated: true)
+                })
+            })))
+        }
+
         if data.canEdit && !isPinnedMessages && !isMigrated {
             actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_MessageDialogEdit, icon: { theme in
                 return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Edit"), color: theme.actionSheet.primaryTextColor)
@@ -2534,7 +2553,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                             }
                         }
                         
-                        if let restrictedText = restrictedText {
+                        if let restrictedText = restrictedText, !restrictedText.isEmpty {
                             storeMessageTextInPasteboard(restrictedText, entities: nil)
                         } else {
                             var translateToLang: String?

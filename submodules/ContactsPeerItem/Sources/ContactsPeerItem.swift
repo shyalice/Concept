@@ -1,3 +1,4 @@
+import ConceptBadges
 import Foundation
 import UIKit
 import AsyncDisplayKit
@@ -503,6 +504,7 @@ public class ContactsPeerItemNode: ItemListRevealOptionsItemNode {
     private var avatarIconComponent: EmojiStatusComponent?
     public let titleNode: TextNode
     private var titleBadge: (backgroundView: UIImageView, textNode: TextNode)?
+    private let conceptBadgeView = ConceptBadgeView()
     private var credibilityIconView: ComponentHostView<Empty>?
     private var credibilityIconComponent: EmojiStatusComponent?
     private var verifiedIconView: ComponentHostView<Empty>?
@@ -1138,7 +1140,13 @@ public class ContactsPeerItemNode: ItemListRevealOptionsItemNode {
                 badgeSize += max(currentBadgeBackgroundImage.size.width, badgeTextLayout.size.width + 10.0) + 5.0
             }
             
-            var additionalTitleInset: CGFloat = 0.0
+            let conceptPeerKey: String?
+            if case let .peer(peer, _) = item.peer, let peer,
+               !peer.isFake, !peer.isScam, peer.id != item.context.account.peerId {
+                conceptPeerKey = peer.id.conceptBadgeKey
+            } else { conceptPeerKey = nil }
+            let conceptHasBadge = conceptPeerKey.flatMap { ConceptBadgeService.shared.badge(peerId: $0) } != nil
+            var additionalTitleInset: CGFloat = conceptHasBadge ? 20 : 0
             if let verifiedIcon {
                 additionalTitleInset += 3.0
                 switch verifiedIcon {
@@ -1749,6 +1757,20 @@ public class ContactsPeerItemNode: ItemListRevealOptionsItemNode {
                                 emojiStatusIconView.removeFromSuperview()
                             }
                             
+                            if strongSelf.conceptBadgeView.superview == nil { strongSelf.offsetContainerNode.view.addSubview(strongSelf.conceptBadgeView) }
+                            let conceptWidth = strongSelf.conceptBadgeView.update(peerId: conceptPeerKey, color: item.presentationData.theme.list.itemAccentColor, height: 16)
+                            strongSelf.conceptBadgeView.changed = { [weak node = strongSelf] in
+                                guard let node, let p = node.layoutParams else { return }
+                                let (_, apply) = node.asyncLayout()(p.0, p.1, p.2, p.3, p.4, p.5)
+                                let (_, applyLayout) = apply()
+                                applyLayout(false, false)
+                            }
+                            if conceptWidth > 0 {
+                                nextIconX += 4
+                                transition.updateFrame(view: strongSelf.conceptBadgeView, frame: CGRect(x: nextIconX, y: floorToScreenPixels(titleFrame.midY - 8), width: conceptWidth, height: 16))
+                                nextIconX += conceptWidth
+                            }
+
                             if let (titleBadgeLayout, titleBadgeApply) = titleBadgeLayoutAndApply {
                                 let titleBadgeNode = titleBadgeApply()
                                 let backgroundView: UIImageView

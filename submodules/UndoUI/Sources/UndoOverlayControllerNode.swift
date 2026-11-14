@@ -1518,6 +1518,7 @@ final class UndoOverlayControllerNode: ViewControllerTracingNode {
                     stillStickerNode.setSignal(updatedImageSignal)
                 }
             case let .progress(progress, title, text, customUndoText):
+                self.isTimeoutDisabled = true
                 self.avatarNode = nil
                 self.iconNode = ASImageNode()
                 self.iconNode?.displayWithoutProcessing = true
@@ -1871,7 +1872,19 @@ final class UndoOverlayControllerNode: ViewControllerTracingNode {
             
             self.renewWithCurrentContent()
             transition = .animated(duration: 0.1, curve: .easeInOut)
-        case let .progress(progress, title, text, _):
+        case let .progress(progress, title, text, customUndoText):
+            if let customUndoText, !customUndoText.isEmpty {
+                self.undoButtonTextNode.attributedText = NSAttributedString(string: customUndoText, font: Font.regular(17.0), textColor: self.undoTextColor)
+                if self.undoButtonNode.supernode == nil {
+                    self.panelWrapperNode.addSubnode(self.undoButtonTextNode)
+                    self.panelWrapperNode.addSubnode(self.undoButtonNode)
+                }
+                self.isUserInteractionEnabled = true
+            } else {
+                self.undoButtonTextNode.removeFromSupernode()
+                self.undoButtonNode.removeFromSupernode()
+                self.isUserInteractionEnabled = self.textNode.tapAttributeAction != nil
+            }
             let body = MarkdownAttributeSet(font: Font.regular(14.0), textColor: .white)
             let bold = MarkdownAttributeSet(font: Font.semibold(14.0), textColor: .white)
             let link = MarkdownAttributeSet(font: Font.regular(14.0), textColor: undoTextColor)

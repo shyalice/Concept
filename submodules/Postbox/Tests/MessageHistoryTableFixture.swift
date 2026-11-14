@@ -122,7 +122,7 @@ final class MessageHistoryTableFixture {
     /// whose only message it is shows the legacy group's history instead.
     static let peerUpgradeMessageText = "[upgrade]"
 
-    static func makeSeedConfiguration() -> SeedConfiguration {
+    static func makeSeedConfiguration(counterTags: PeerSummaryCounterTags = []) -> SeedConfiguration {
         return SeedConfiguration(
             globalMessageIdsPeerIdNamespaces: [],
             initializeChatListWithHole: (topLevel: nil, groups: nil),
@@ -136,7 +136,7 @@ final class MessageHistoryTableFixture {
             messageTagsWithThreadSummary: [],
             existingGlobalMessageTags: [],
             peerNamespacesRequiringMessageTextIndex: [],
-            peerSummaryCounterTags: { _, _ in PeerSummaryCounterTags() },
+            peerSummaryCounterTags: { _, _ in counterTags },
             peerSummaryIsThreadBased: { peer, _ in ((peer as? FixturePeer)?.isForum ?? false, false) },
             additionalChatListIndexNamespace: nil,
             messageNamespacesRequiringGroupStatsValidation: [],
