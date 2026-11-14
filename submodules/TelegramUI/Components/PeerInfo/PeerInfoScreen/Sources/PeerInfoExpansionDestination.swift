@@ -133,7 +133,7 @@ final class PeerInfoExpansionDestination: NavigationExpansionDestinationProvidin
             appearingViews: buttons.map { $0.view },
             appearingCompanions: buttons.map { [$0.backgroundContainerView] },
             overlayViews: overlays,
-            backgroundViews: [background, banner],
+            backgroundViews: [background, node.conceptBackdrop, banner],
             listViews: [node.scrollNode.view] + header.expansionDecorationViews + photoControls,
             // The page rides the status, as the prototype's actions and info card do: the list, the buttons and the music
             // strip.

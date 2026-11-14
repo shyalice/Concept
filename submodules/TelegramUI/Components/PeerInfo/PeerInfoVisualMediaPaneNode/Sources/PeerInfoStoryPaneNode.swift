@@ -1683,6 +1683,8 @@ public final class PeerInfoStoryPaneNode: ASDisplayNode, PeerInfoPaneNode, ASScr
         self.statusPromise.get()
     }
 
+    public var profileBackgroundOffsetUpdated: (() -> Void)?
+    public var profileBackgroundScrollOffset: CGFloat { return max(0.0, self.itemGrid.scrollingOffset) }
     public var tabBarOffsetUpdated: ((ContainedViewLayoutTransition) -> Void)?
     public var tabBarOffset: CGFloat {
         if case .botPreview = self.scope {
@@ -2098,6 +2100,7 @@ public final class PeerInfoStoryPaneNode: ASDisplayNode, PeerInfoPaneNode, ASScr
                 return
             }
             self.gridScrollingOffsetUpdated(transition: transition)
+            self.profileBackgroundOffsetUpdated?()
         }
 
         var processedOnBeginFastScrolling = false
@@ -4078,16 +4081,17 @@ public final class PeerInfoStoryPaneNode: ASDisplayNode, PeerInfoPaneNode, ASScr
             folderTabTransition = folderTabTransition.withUserData(TabSelectorComponent.TransitionHint(scrollToEnd: true))
         }
         
+        let folderPresentationData = self.currentParams?.presentationData ?? self.presentationData
         let folderTabSize = folderTab.update(
             transition: folderTabTransition,
             component: AnyComponent(TabSelectorComponent(
                 colors: TabSelectorComponent.Colors(
-                    foreground: self.presentationData.theme.list.itemPrimaryTextColor,
-                    selection: self.presentationData.theme.list.itemPrimaryTextColor.withMultipliedAlpha(0.05),
-                    normal: self.presentationData.theme.list.itemPrimaryTextColor,
+                    foreground: folderPresentationData.theme.list.itemPrimaryTextColor,
+                    selection: folderPresentationData.theme.list.itemPrimaryTextColor.withMultipliedAlpha(0.05),
+                    normal: folderPresentationData.theme.list.itemPrimaryTextColor,
                     simple: true
                 ),
-                theme: self.presentationData.theme,
+                theme: folderPresentationData.theme,
                 customLayout: TabSelectorComponent.CustomLayout(
                     font: Font.medium(15.0),
                     spacing: 9.0,

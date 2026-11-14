@@ -210,6 +210,7 @@ public final class PeerInfoAvatarListItemNode: ASDisplayNode {
     private let context: AccountContext
     private let peer: EnginePeer
     public let imageNode: TransformImageNode
+    public var imageChanged: ((UIImage?) -> Void)?
     private var videoNode: UniversalVideoNode?
     private var videoContent: NativeVideoContent?
     private var videoStartTimestamp: Double?
@@ -284,6 +285,7 @@ public final class PeerInfoAvatarListItemNode: ASDisplayNode {
         self.clipsToBounds = true
                 
         self.imageNode.contentAnimations = [.firstUpdate, .subsequentUpdates]
+        self.imageNode.imageUpdated = { [weak self] image in self?.imageChanged?(image) }
         self.addSubnode(self.imageNode)
         self.addSubnode(self.statusNode)
                 
@@ -562,7 +564,8 @@ public final class PeerInfoAvatarListItemNode: ASDisplayNode {
             self.statusPromise.set(.single(nil))
             self.statusDisposable.set(nil)
             
-            self.imageNode.imageUpdated = { [weak self] _ in
+            self.imageNode.imageUpdated = { [weak self] image in
+                self?.imageChanged?(image)
                 guard let strongSelf = self else {
                     return
                 }

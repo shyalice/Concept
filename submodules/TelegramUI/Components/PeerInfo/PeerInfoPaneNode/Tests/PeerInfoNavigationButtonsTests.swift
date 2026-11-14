@@ -132,6 +132,15 @@ final class PeerInfoNavigationThemeTests: XCTestCase {
         XCTAssertEqual(theme.edgeEffectColor, UIColor.clear)
     }
 
+    func test_profileOverlay_usesClearMaterialWithoutOpaqueTint() {
+        let theme = peerInfoNavigationBarTheme(glass: .profileOverlay, base: self.base(dark: false))
+        XCTAssertEqual(theme.buttonColor, .white)
+        XCTAssertNil(theme.glassTintColor)
+        XCTAssertTrue(theme.overallDarkAppearance)
+        if case .clear = theme.glassStyle {} else { XCTFail("photo controls must use clear material") }
+        XCTAssertEqual(theme.edgeEffectColor, UIColor.clear)
+    }
+
     func test_theme_keepsTheBasesAppearance() {
         let base = self.base(dark: true)
         for glass in [PeerInfoNavigationGlass.plain, .tinted(.orange)] {

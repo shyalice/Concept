@@ -103,6 +103,8 @@ public protocol PeerInfoPaneNode: ASDisplayNode {
     var status: Signal<PeerInfoStatusData?, NoError> { get }
     var tabBarOffsetUpdated: ((ContainedViewLayoutTransition) -> Void)? { get set }
     var tabBarOffset: CGFloat { get }
+    var profileBackgroundScrollOffset: CGFloat { get }
+    var profileBackgroundOffsetUpdated: (() -> Void)? { get set }
     
     var navigationContentNode: PeerInfoPanelNodeNavigationContentNode? { get }
     var externalDataUpdated: ((ContainedViewLayoutTransition) -> Void)? { get set }
@@ -120,6 +122,11 @@ public protocol PeerInfoPaneNode: ASDisplayNode {
 }
 
 public extension PeerInfoPaneNode {
+    var profileBackgroundScrollOffset: CGFloat { return 0.0 }
+    var profileBackgroundOffsetUpdated: (() -> Void)? {
+        get { return nil }
+        set { }
+    }
     var navigationContentNode: PeerInfoPanelNodeNavigationContentNode? {
         return nil
     }

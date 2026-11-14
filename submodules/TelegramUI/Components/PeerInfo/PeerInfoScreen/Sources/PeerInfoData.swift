@@ -2575,7 +2575,7 @@ func peerInfoIsCopyProtected(data: PeerInfoScreenData, sharedMediaFromForumTopic
     } else if let peer = data.peer, peer.isCopyProtectionEnabled {
         isCopyProtected = true
     }
-    return isCopyProtected
+    return isCopyProtected && !MiscSettingsManager.shared.shouldBypassCopyProtection
 }
 
 func canEditPeerInfo(context: AccountContext, peer: EnginePeer?, chatLocation: ChatLocation, threadData: MessageHistoryThreadData?) -> Bool {

@@ -167,6 +167,8 @@ private final class PeerInfoScreenLabeledValueItemNode: PeerInfoScreenItemNode {
     private let measureTextNode: ImmediateTextNode
     private let bottomSeparatorNode: ASDisplayNode
     
+    private let expandTextMask = ConceptProfileTextFadeMask()
+    private let expandSpoilerMask = ConceptProfileTextFadeMask()
     private let expandBackgroundNode: ASImageNode
     private let expandNode: ImmediateTextNode
     private let expandButonNode: HighlightTrackingButtonNode
@@ -896,6 +898,21 @@ private final class PeerInfoScreenLabeledValueItemNode: PeerInfoScreenItemNode {
         transition.updateFrame(node: self.bottomSeparatorNode, frame: CGRect(origin: CGPoint(x: sideInset, y: height - UIScreenPixel), size: CGSize(width: width - sideInset - separatorRightInset, height: UIScreenPixel)))
         transition.updateAlpha(node: self.bottomSeparatorNode, alpha: bottomItem == nil ? 0.0 : 1.0)
         
+        let fadeMore = displayMore && !self.expandNode.isHidden && presentationData.theme.list.itemBlocksBackgroundColor.cgColor.alpha < 0.01
+        if fadeMore {
+            let moreInText = expandFrame.offsetBy(dx: -textFrame.minX, dy: -textFrame.minY)
+            self.expandTextMask.update(size: textFrame.size, more: moreInText)
+            self.textNode.layer.mask = self.expandTextMask
+            if let spoilerTextNode = self.spoilerTextNode {
+                self.expandSpoilerMask.update(size: textFrame.size, more: moreInText)
+                spoilerTextNode.layer.mask = self.expandSpoilerMask
+            }
+            self.expandBackgroundNode.isHidden = true
+        } else {
+            self.textNode.layer.mask = nil
+            self.spoilerTextNode?.layer.mask = nil
+        }
+
         let hasCorners = hasCorners && (topItem == nil || bottomItem == nil)
         let hasTopCorners = hasCorners && topItem == nil
         let hasBottomCorners = hasCorners && bottomItem == nil

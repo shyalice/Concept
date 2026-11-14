@@ -92,6 +92,8 @@ public final class PeerInfoMediaGridPaneNode: ASDisplayNode, PeerInfoVisualMedia
         return self.statusPromise.get()
     }
 
+    public var profileBackgroundOffsetUpdated: (() -> Void)?
+    public var profileBackgroundScrollOffset: CGFloat { return max(0.0, self.gridView.contentOffset) }
     public var tabBarOffsetUpdated: ((ContainedViewLayoutTransition) -> Void)?
     public var tabBarOffset: CGFloat {
         return self.coveringInsetOffset
@@ -343,6 +345,7 @@ public final class PeerInfoMediaGridPaneNode: ASDisplayNode, PeerInfoVisualMedia
         }
         self.gridView.onScroll = { [weak self] offset in
             self?.gridDidScroll(offset: offset)
+            self?.profileBackgroundOffsetUpdated?()
         }
         self.gridView.onZoomingChanged = { [weak self] isZooming in
             guard let self else {

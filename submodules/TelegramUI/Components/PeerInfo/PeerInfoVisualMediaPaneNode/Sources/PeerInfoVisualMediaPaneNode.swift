@@ -1269,6 +1269,8 @@ public final class PeerInfoVisualMediaPaneNode: ASDisplayNode, PeerInfoPaneNode,
         self.statusPromise.get()
     }
 
+    public var profileBackgroundOffsetUpdated: (() -> Void)?
+    public var profileBackgroundScrollOffset: CGFloat { return max(0.0, self.itemGrid.scrollingOffset) }
     public var tabBarOffsetUpdated: ((ContainedViewLayoutTransition) -> Void)?
     public var tabBarOffset: CGFloat {
         return self.itemGrid.coveringInsetOffset
@@ -1479,6 +1481,7 @@ public final class PeerInfoVisualMediaPaneNode: ASDisplayNode, PeerInfoPaneNode,
                 return
             }
             strongSelf.updateListBackground(transition: transition)
+            strongSelf.profileBackgroundOffsetUpdated?()
         }
 
         var processedOnBeginFastScrolling = false

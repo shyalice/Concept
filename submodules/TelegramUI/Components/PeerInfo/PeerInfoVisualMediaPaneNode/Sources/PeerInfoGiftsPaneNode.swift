@@ -119,6 +119,8 @@ public final class PeerInfoGiftsPaneNode: ASDisplayNode, PeerInfoPaneNode, UIScr
         self.statusPromise.get()
     }
     
+    public var profileBackgroundOffsetUpdated: (() -> Void)?
+    public var profileBackgroundScrollOffset: CGFloat { return max(0.0, self.scrollNode.view.contentOffset.y) }
     public var tabBarOffsetUpdated: ((ContainedViewLayoutTransition) -> Void)?
     public var tabBarOffset: CGFloat {
         return 0.0
@@ -373,6 +375,7 @@ public final class PeerInfoGiftsPaneNode: ASDisplayNode, PeerInfoPaneNode, UIScr
     }
     
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        self.profileBackgroundOffsetUpdated?()
         self.updateScrolling(interactive: true, transition: .immediate)
     }
     

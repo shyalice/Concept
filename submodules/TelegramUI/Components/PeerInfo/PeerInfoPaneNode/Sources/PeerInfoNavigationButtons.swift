@@ -157,12 +157,15 @@ public struct PeerInfoPaneSetLatch {
 public enum PeerInfoNavigationGlass: Equatable {
     case plain
     case tinted(UIColor)
+    case profileOverlay
 }
 
 /// The profile bar's theme: `base` (the regular bar's) without an edge effect, its glyphs and glass by `glass`.
 public func peerInfoNavigationBarTheme(glass: PeerInfoNavigationGlass, base: NavigationBarTheme) -> NavigationBarTheme {
     let buttonColor: UIColor
     let glassTintColor: UIColor?
+    var isDark = base.overallDarkAppearance
+    var glassStyle = base.glassStyle
     switch glass {
     case .plain:
         buttonColor = base.buttonColor
@@ -170,8 +173,13 @@ public func peerInfoNavigationBarTheme(glass: PeerInfoNavigationGlass, base: Nav
     case let .tinted(color):
         buttonColor = .white
         glassTintColor = color
+    case .profileOverlay:
+        buttonColor = .white
+        glassTintColor = nil
+        glassStyle = .clear
+        isDark = true
     }
-    return NavigationBarTheme(overallDarkAppearance: base.overallDarkAppearance, buttonColor: buttonColor, disabledButtonColor: base.disabledButtonColor, primaryTextColor: base.primaryTextColor, badgeBackgroundColor: base.badgeBackgroundColor, badgeTextColor: base.badgeTextColor, edgeEffectColor: .clear, accentButtonColor: base.accentButtonColor, accentDisabledButtonColor: base.accentDisabledButtonColor, accentForegroundColor: base.accentForegroundColor, glassStyle: base.glassStyle, glassTintColor: glassTintColor)
+    return NavigationBarTheme(overallDarkAppearance: isDark, buttonColor: buttonColor, disabledButtonColor: base.disabledButtonColor, primaryTextColor: base.primaryTextColor, badgeBackgroundColor: base.badgeBackgroundColor, badgeTextColor: base.badgeTextColor, edgeEffectColor: .clear, accentButtonColor: base.accentButtonColor, accentDisabledButtonColor: base.accentDisabledButtonColor, accentForegroundColor: base.accentForegroundColor, glassStyle: glassStyle, glassTintColor: glassTintColor)
 }
 
 /// How many of `keys` the row holds: on iPhone Duo the side column takes the icons.

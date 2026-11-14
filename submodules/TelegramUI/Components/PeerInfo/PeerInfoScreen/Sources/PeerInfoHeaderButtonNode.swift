@@ -7,6 +7,7 @@ import Display
 import TelegramPresentationData
 import ComponentFlow
 import LottieComponent
+import GlassBackgroundComponent
 
 enum PeerInfoHeaderButtonKey: Hashable {
     case message
@@ -51,11 +52,12 @@ final class PeerInfoHeaderButtonNode: HighlightableButtonNode {
     private var theme: PresentationTheme?
     private var icon: PeerInfoHeaderButtonIcon?
     private var isActive: Bool?
-    private var contextMenuActivated = false
     weak var contextMenuSourceContainer: UIView?
     private weak var contextMenuBackgroundNode: NavigationBackgroundNode?
     private var contextMenuBackgroundColor: UIColor = .clear
     
+    private let glassView = GlassBackgroundView()
+    private let glassButton = HighlightTrackingButton()
     let backgroundContainerView: UIView
     let backgroundView: UIView
     
@@ -66,15 +68,12 @@ final class PeerInfoHeaderButtonNode: HighlightableButtonNode {
         self.referenceNode = ContextReferenceContentNode()
         self.containerNode = ContextControllerSourceNode()
         self.containerNode.animateScale = false
-        
+
         self.backgroundContainerView = UIView()
         self.backgroundView = UIView()
-        self.backgroundView.backgroundColor = .white
+        self.backgroundView.backgroundColor = .clear
         self.backgroundContainerView.addSubview(self.backgroundView)
-        self.referenceNode.additionalContextMenuSourceViews = [self.backgroundView]
-        
-        /*self.backgroundNode = NavigationBackgroundNode(color: UIColor(white: 1.0, alpha: 0.2), enableBlur: true, enableSaturation: false)
-        self.backgroundNode.isUserInteractionEnabled = false*/
+        self.referenceNode.additionalContextMenuSourceViews = [self.glassView]
         
         self.contentNode = ASDisplayNode()
         self.contentNode.isUserInteractionEnabled = false
@@ -93,26 +92,16 @@ final class PeerInfoHeaderButtonNode: HighlightableButtonNode {
         self.accessibilityTraits = .button
         
         self.containerNode.addSubnode(self.referenceNode)
-        //self.referenceNode.addSubnode(self.backgroundNode)
+        self.glassView.isUserInteractionEnabled = true
+        self.glassView.accessibilityElementsHidden = true
+        self.referenceNode.view.addSubview(self.glassView)
         self.referenceNode.addSubnode(self.contentNode)
+        self.glassView.contentView.addSubview(self.glassButton)
+        self.glassButton.accessibilityElementsHidden = true
+        self.glassButton.addTarget(self, action: #selector(self.buttonPressed), for: .touchUpInside)
         self.contentNode.addSubnode(self.iconNode)
         self.addSubnode(self.containerNode)
         self.contentNode.addSubnode(self.textNode)
-        
-        self.highligthedChanged = { [weak self] highlighted in
-            if let strongSelf = self {
-                if highlighted {
-                    strongSelf.contextMenuActivated = false
-                    strongSelf.layer.removeAnimation(forKey: "opacity")
-                    strongSelf.alpha = 0.4
-                } else {
-                    strongSelf.alpha = 1.0
-                    if !strongSelf.contextMenuActivated {
-                        strongSelf.layer.animateAlpha(from: 0.4, to: 1.0, duration: 0.2)
-                    }
-                }
-            }
-        }
         
         self.referenceNode.makeContextMenuSourceContent = { [weak self] in
             guard let self, let container = self.contextMenuSourceContainer else { return nil }
@@ -142,7 +131,6 @@ final class PeerInfoHeaderButtonNode: HighlightableButtonNode {
         // Profile action buttons do not opt in to the morph for now, so they keep the
         // normal release fade.
         guard #available(iOS 26.0, *), self.key == .more || self.key == .mute, self.referenceNode.view.morphsIntoContextMenu else { return }
-        self.contextMenuActivated = true
         self.alpha = 1.0
         self.layer.removeAnimation(forKey: "opacity")
     }
@@ -305,29 +293,44 @@ final class PeerInfoHeaderButtonNode: HighlightableButtonNode {
         let titleSize = self.textNode.updateLayout(CGSize(width: 120.0, height: .greatestFiniteMagnitude))
         
         transition.updateFrame(node: self.containerNode, frame: CGRect(origin: CGPoint(), size: size))
-        transition.updateFrame(node: self.contentNode, frame: CGRect(origin: CGPoint(x: 0.0, y: size.height * 0.5 * (1.0 - fraction)), size: size))
+        let contentFrame = CGRect(origin: CGPoint(x: 0.0, y: size.height * 0.5 * (1.0 - fraction)), size: size)
         transition.updateAlpha(node: self.contentNode, alpha: fraction)
         
         let backgroundY: CGFloat = size.height * (1.0 - fraction)
-        let backgroundFrame = CGRect(origin: CGPoint(x: 0.0, y: backgroundY), size: CGSize(width: size.width, height: max(0.0, size.height - backgroundY)))
-        //transition.updateFrame(node: self.backgroundNode, frame: backgroundFrame)
+        let diameter = min(size.width, size.height)
+        let backgroundFrame = CGRect(origin: CGPoint(x: floorToScreenPixels((size.width - diameter) * 0.5), y: backgroundY), size: CGSize(width: diameter, height: max(0.0, diameter - backgroundY)))
+        let cornerRadius = min(diameter * 0.5, backgroundFrame.height * 0.5)
+        self.backgroundView.backgroundColor = .clear
+        transition.updateFrame(view: self.glassView, frame: backgroundFrame)
+        self.glassView.update(size: backgroundFrame.size, cornerRadius: cornerRadius, isDark: foregroundColor.isEqual(UIColor.white) || presentationData.theme.overallDarkAppearance, tintColor: .init(kind: .panel), isInteractive: true, transition: ComponentTransition(transition))
+        self.glassView.isHidden = UIAccessibility.isReduceTransparencyEnabled
+        transition.updateAlpha(layer: self.glassView.layer, alpha: fraction)
+        self.textNode.isHidden = true // The native label remains the accessibility label.
+
         transition.updateFrame(view: self.backgroundView, frame: backgroundFrame)
         
         transition.updateSublayerTransformScale(node: self.contentNode, scale: 1.0 * fraction + 0.001 * (1.0 - fraction))
         
-        transition.updateCornerRadius(layer: self.backgroundView.layer, cornerRadius: min(16.0, backgroundFrame.height * 0.5))
-        // The context source contains only the foreground; its backdrop is a
-        // separate shared-blur mask. Match both its rounded shape and its visible
-        // bounds, including a partially collapsed header.
-        self.referenceNode.contextMenuSourcePath = UIBezierPath(roundedRect: backgroundFrame, cornerRadius: min(16.0, backgroundFrame.height * 0.5))
-        //self.backgroundNode.update(size: backgroundFrame.size, cornerRadius: min(11.0, backgroundFrame.height * 0.5), transition: transition)
-        //self.backgroundNode.updateColor(color: backgroundColor, transition: transition)
-        transition.updateFrame(node: self.iconNode, frame: CGRect(origin: CGPoint(x: floor((size.width - iconSize.width) / 2.0), y: 1.0), size: iconSize))
+        transition.updateCornerRadius(layer: self.backgroundView.layer, cornerRadius: cornerRadius)
+        self.referenceNode.contextMenuSourcePath = UIBezierPath(roundedRect: backgroundFrame, cornerRadius: cornerRadius)
+        transition.updateFrame(node: self.iconNode, frame: CGRect(origin: CGPoint(x: floor((size.width - iconSize.width) / 2.0), y: floorToScreenPixels((diameter - iconSize.height) * 0.5)), size: iconSize))
         if let animatedIconView = self.animatedIcon?.view {
-            transition.updateFrame(view: animatedIconView, frame: CGRect(origin: CGPoint(x: floor((size.width - iconSize.width) / 2.0), y: 1.0), size: iconSize))
+            transition.updateFrame(view: animatedIconView, frame: CGRect(origin: CGPoint(x: floor((size.width - iconSize.width) / 2.0), y: floorToScreenPixels((diameter - iconSize.height) * 0.5)), size: iconSize))
         }
         transition.updateFrameAdditiveToCenter(node: self.textNode, frame: CGRect(origin: CGPoint(x: floor((size.width - titleSize.width) / 2.0), y: size.height - titleSize.height - 9.0), size: titleSize))
         
+        // Keep the icon inside UIKit's deforming glass so it travels with the material.
+        if self.glassView.isHidden {
+            if self.contentNode.view.superview !== self.referenceNode.view {
+                self.referenceNode.view.addSubview(self.contentNode.view)
+            }
+        } else {
+            if self.contentNode.view.superview !== self.glassButton {
+                self.glassButton.addSubview(self.contentNode.view)
+            }
+            self.glassButton.frame = CGRect(origin: .zero, size: backgroundFrame.size)
+        }
+        transition.updateFrame(node: self.contentNode, frame: self.glassView.isHidden ? contentFrame : contentFrame.offsetBy(dx: -backgroundFrame.minX, dy: -backgroundFrame.minY))
         self.referenceNode.frame = self.containerNode.bounds
         self.updateContextMenuBackground()
     }

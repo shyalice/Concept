@@ -169,10 +169,11 @@ enum PeerInfoContextSubject {
 }
 
 enum PeerInfoSettingsSection {
-    // MARK: Swiftgram
+    case concept
     case swiftgram
     case swiftgramPro
-    //
+    case enterSecretCode
+    case manageSecretCodes
     case avatar
     case edit
     case proxy
@@ -276,6 +277,107 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
     let edgeEffectView: EdgeEffectView
     
     let headerNode: PeerInfoHeaderNode
+    let conceptBackdrop = ConceptProfileBackdropView()
+    private let conceptSharpPhotoMask = CAGradientLayer()
+    private weak var conceptMaskedPhotoView: UIView?
+    private weak var conceptObservedPhotoItem: PeerInfoAvatarListItemNode?
+    private var conceptSurfaceThemeSource: PresentationData?
+    private var conceptSurfaceThemes: [Int: (rows: PresentationData, panes: PresentationData)] = [:]
+    private var conceptAppliedPaletteKey: Int?
+    private var conceptAccessibilityObserver: NSObjectProtocol?
+
+    private var conceptGlassEnabled: Bool {
+        return !self.isSettings && !self.isMediaOnly && !self.state.isEditing && !UIAccessibility.isReduceTransparencyEnabled
+    }
+
+    private var conceptDecorativeSurface: Bool {
+        if self.headerNode.isAvatarExpanded { return true }
+        let peer = self.data?.savedMessagesPeer ?? self.data?.peer
+        if let status = peer?.emojiStatus, case .starGift = status.content { return true }
+        return peer?.effectiveProfileColor != nil
+    }
+
+    private var conceptPaletteKey: Int {
+        let decorative = self.conceptDecorativeSurface
+        guard decorative else { return 33 }
+        let fraction = self.headerNode.conceptThemeFraction
+        return min(32, Int(fraction * 8.0) * 4)
+    }
+
+    private func conceptSurfaceData(decorative: Bool = false) -> PresentationData {
+        guard self.conceptGlassEnabled else { return self.presentationData }
+        if self.conceptSurfaceThemeSource !== self.presentationData {
+            self.conceptSurfaceThemeSource = self.presentationData
+            self.conceptSurfaceThemes.removeAll()
+            self.conceptAppliedPaletteKey = nil
+        }
+        let key = self.conceptPaletteKey
+        if let cached = self.conceptSurfaceThemes[key] { return decorative ? cached.rows : cached.panes }
+        let fraction = CGFloat(min(32, key)) / 32.0
+        let dominantColor = self.conceptBackdrop.dominantColor
+        let rows = self.presentationData.withUpdated(theme: conceptProfileSurfaceTheme(self.presentationData.theme, dominantColor: dominantColor, fraction: fraction, decorative: key != 33, rows: true))
+        let panes = self.presentationData.withUpdated(theme: conceptProfileSurfaceTheme(self.presentationData.theme, dominantColor: dominantColor, fraction: fraction, decorative: key != 33, rows: false))
+        self.conceptSurfaceThemes[key] = (rows, panes)
+        return decorative ? rows : panes
+    }
+
+    private func updateConceptBackdrop(transition: ContainedViewLayoutTransition) {
+        guard let (layout, navigationHeight) = self.validLayout, !self.isLentToExpansion else { return }
+        let avatar = self.headerNode.avatarListNode
+        let currentPhotoItem = avatar.listContainerNode.currentItemNode
+        if self.conceptObservedPhotoItem !== currentPhotoItem {
+            self.conceptObservedPhotoItem?.imageChanged = nil
+            self.conceptObservedPhotoItem = currentPhotoItem
+            currentPhotoItem?.imageChanged = { [weak self, weak currentPhotoItem] _ in
+                guard let self, let currentPhotoItem, self.headerNode.avatarListNode.listContainerNode.currentItemNode === currentPhotoItem else { return }
+                self.updateConceptBackdrop(transition: .immediate)
+            }
+        }
+        let peer = self.data?.savedMessagesPeer ?? self.data?.peer
+        let hasProfilePhoto = peer?.profileImageRepresentations.isEmpty == false
+        let image: UIImage?
+        if let currentImage = avatar.listContainerNode.currentItemNode?.imageNode.image {
+            image = currentImage
+        } else if !hasProfilePhoto {
+            image = avatar.avatarContainerNode.avatarNode.unroundedImage
+        } else {
+            image = nil
+        }
+        let avatarFrame: CGRect
+        if self.headerNode.isAvatarExpanded {
+            avatarFrame = avatar.listContainerNode.view.convert(avatar.listContainerNode.view.bounds, to: self.view)
+        } else {
+            let roundAvatar = avatar.avatarContainerNode.avatarNode
+            avatarFrame = roundAvatar.view.convert(roundAvatar.view.bounds, to: self.view)
+        }
+        transition.updateFrame(view: self.conceptBackdrop, frame: CGRect(origin: .zero, size: layout.size))
+        // The native bottom-shadow/replicated continuation is outside each
+        // gallery item. Fade the whole gallery, so it cannot end in a hard band.
+        let photoView: UIView? = avatar.listContainerNode.view
+        avatar.listContainerNode.bottomShadowNode.isHidden = self.conceptGlassEnabled
+        if self.conceptMaskedPhotoView !== photoView {
+            if self.conceptMaskedPhotoView?.layer.mask === self.conceptSharpPhotoMask { self.conceptMaskedPhotoView?.layer.mask = nil }
+            self.conceptMaskedPhotoView = photoView
+        }
+        if self.conceptGlassEnabled, self.headerNode.isAvatarExpanded, let photoView,
+           photoView.layer.mask == nil || photoView.layer.mask === self.conceptSharpPhotoMask {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            self.conceptSharpPhotoMask.frame = photoView.bounds
+            self.conceptSharpPhotoMask.colors = [UIColor.white.cgColor, UIColor.white.cgColor, UIColor.clear.cgColor]
+            self.conceptSharpPhotoMask.locations = [0.0, 0.60, 1.0]
+            CATransaction.commit()
+            photoView.layer.mask = self.conceptSharpPhotoMask
+        } else if photoView?.layer.mask === self.conceptSharpPhotoMask {
+            photoView?.layer.mask = nil
+        }
+        self.conceptBackdrop.update(context: self.context, peer: self.data?.savedMessagesPeer ?? self.data?.peer, size: layout.size, avatarFrame: avatarFrame, image: image, expanded: self.headerNode.isAvatarExpanded, enabled: self.conceptGlassEnabled, theme: self.presentationData.theme, transition: transition)
+        self.updateConceptBackdropScroll(navigationHeight: navigationHeight, viewportHeight: layout.size.height)
+    }
+
+    private func updateConceptBackdropScroll(navigationHeight: CGFloat, viewportHeight: CGFloat) {
+        self.conceptBackdrop.updateScroll(themeFraction: self.headerNode.conceptThemeFraction)
+    }
     var underHeaderContentsAlpha: CGFloat = 1.0
     var regularSections: [AnyHashable: PeerInfoScreenItemSectionContainerNode] = [:]
     var editingSections: [AnyHashable: PeerInfoScreenItemSectionContainerNode] = [:]
@@ -1397,6 +1499,22 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
         self.scrollNode.view.alwaysBounceVertical = true
         self.scrollNode.view.scrollsToTop = false
         self.scrollNode.view.delegate = self.wrappedScrollViewDelegate
+        self.view.addSubview(self.conceptBackdrop)
+        self.conceptBackdrop.onColorUpdated = { [weak self] in
+            guard let self, let (layout, navigationHeight) = self.validLayout else { return }
+            self.conceptSurfaceThemes.removeAll()
+            self.conceptAppliedPaletteKey = nil
+            self.headerNode.conceptDominantColor = self.conceptBackdrop.dominantColor
+            self.containerLayoutUpdated(layout: layout, navigationHeight: navigationHeight, transition: .animated(duration: 0.35, curve: .easeInOut))
+        }
+        self.conceptAccessibilityObserver = NotificationCenter.default.addObserver(forName: UIAccessibility.reduceTransparencyStatusDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            guard let self, let (layout, navigationHeight) = self.validLayout else { return }
+            self.containerLayoutUpdated(layout: layout, navigationHeight: navigationHeight, transition: .immediate)
+        }
+        self.paneContainerNode.profileBackgroundOffsetUpdated = { [weak self] in
+            guard let self, let (layout, navigationHeight) = self.validLayout else { return }
+            self.updateConceptBackdropScroll(navigationHeight: navigationHeight, viewportHeight: layout.size.height)
+        }
         self.addSubnode(self.scrollNode)
         self.scrollNode.addSubnode(self.paneContainerNode)
         self.scrollNode.view.addSubview(self.headerNode.headerEdgeEffectContainer)
@@ -1461,7 +1579,12 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                     }
                 }
                 
-                strongSelf.containerLayoutUpdated(layout: layout, navigationHeight: navigationHeight, transition: .immediate, additive: false)
+                else if strongSelf.headerNode.avatarListNode.listContainerTransformNode.layer.animationKeys()?.isEmpty ?? true {
+                    // A pane switch can arrive while requestExpandTabs is already
+                    // collapsing the avatar. An immediate second layout cancels
+                    // that spring and makes the photo/title snap to their target.
+                    strongSelf.containerLayoutUpdated(layout: layout, navigationHeight: navigationHeight, transition: .immediate, additive: false)
+                }
                 if expand {
                     strongSelf.scrollNode.view.setContentOffset(CGPoint(x: 0.0, y: strongSelf.paneContainerNode.frame.minY - navigationHeight), animated: true)
                 }
@@ -2783,6 +2906,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
     }
     
     deinit {
+        if let observer = self.conceptAccessibilityObserver { NotificationCenter.default.removeObserver(observer) }
         self.dataDisposable?.dispose()
         self.walletStickersPreloadDisposable.dispose()
         self.hiddenMediaDisposable?.dispose()
@@ -5653,7 +5777,8 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
         self.appliedNavigationGlass = (glass, self.presentationData.theme, self.presentationData.strings)
         let base = NavigationBarPresentationData(presentationData: self.presentationData)
         let theme = peerInfoNavigationBarTheme(glass: glass, base: base.theme)
-        navigationBar.updatePresentationData(NavigationBarPresentationData(theme: theme, strings: base.strings), transition: transition)
+        let effectiveTransition: ContainedViewLayoutTransition = transition.isAnimated ? transition : .animated(duration: 0.25, curve: .easeInOut)
+        navigationBar.updatePresentationData(NavigationBarPresentationData(theme: theme, strings: base.strings), transition: effectiveTransition)
         self.navigationButtonColor = theme.buttonColor
     }
 
@@ -5807,7 +5932,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                         contentHeight -= 16.0
                     }
                 }
-                let sectionHeight = sectionNode.update(context: self.context, width: sectionWidth, safeInsets: UIEdgeInsets(), hasCorners: !insets.left.isZero, presentationData: self.presentationData, items: sectionItems, transition: transition)
+                let sectionHeight = sectionNode.update(context: self.context, width: sectionWidth, safeInsets: UIEdgeInsets(), hasCorners: !insets.left.isZero, presentationData: self.conceptSurfaceData(decorative: true), items: sectionItems, glass: self.conceptGlassEnabled, transition: transition)
                 let sectionFrame = CGRect(origin: CGPoint(x: insets.left, y: contentHeight), size: CGSize(width: sectionWidth, height: sectionHeight))
                 if additive {
                     transition.updateFrameAdditive(node: sectionNode, frame: sectionFrame)
@@ -6174,6 +6299,28 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                 let _ = self.headerNode.update(width: layout.size.width, containerHeight: layout.size.height, containerInset: headerInset, sideInsets: sideInsets, statusBarHeight: layout.navigationBarStatusBarHeight ?? 0.0, navigationHeight: navigationHeight, presentedInFormSheet: layout.presentedInFormSheet, isMediaOnly: self.isMediaOnly, contentOffset: self.isMediaOnly ? 212.0 : offsetY, paneContainerY: self.paneContainerNode.frame.minY, presentationData: self.presentationData, peer: self.data?.savedMessagesPeer ?? self.data?.peer, cachedData: self.data?.cachedData, threadData: self.data?.threadData, peerNotificationSettings: self.data?.peerNotificationSettings, threadNotificationSettings: self.data?.threadNotificationSettings, globalNotificationSettings: self.data?.globalNotificationSettings, statusData: self.data?.status, panelStatusData: self.customStatusData, isSecretChat: self.peerId.namespace == Namespaces.Peer.SecretChat, isContact: self.data?.isContact ?? false, isSettings: self.isSettings, state: self.state, profileGiftsContext: self.data?.profileGiftsContext, screenData: self.data, isSearching: self.searchDisplayController != nil, metrics: layout.metrics, deviceMetrics: layout.deviceMetrics, transition: transition, additive: additive, animateHeader: animateHeader)
             }
             
+            if self.conceptGlassEnabled {
+                let dominantColor = self.conceptBackdrop.dominantColor
+                self.headerNode.conceptDominantColor = dominantColor
+                let isDark = self.presentationData.theme.overallDarkAppearance
+                let tintColor = conceptProfileCardTintColor(dominantColor: dominantColor, isDark: isDark)
+                let fraction = self.conceptDecorativeSurface ? self.headerNode.conceptThemeFraction : 1.0
+                let palette = self.conceptSurfaceData(decorative: true)
+                if self.conceptAppliedPaletteKey != self.conceptPaletteKey {
+                    self.conceptAppliedPaletteKey = self.conceptPaletteKey
+                    for section in self.regularSections.values { section.updateAppearance(presentationData: palette) }
+                }
+                // Smooth dual-layer transition: blur + adaptive tint linearly fade out
+                // while solid theme background linearly fades in, with zero brightness spikes.
+                for section in self.regularSections.values {
+                    section.updateBackdrop(tintColor: tintColor, targetColor: self.presentationData.theme.list.itemBlocksBackgroundColor, fraction: fraction, isDark: isDark)
+                }
+                let tabsTint = isDark ? UIColor(white: 1.0, alpha: 0.08) : UIColor(white: 1.0, alpha: 0.16)
+                self.paneContainerNode.profileSurfaceColor = tabsTint
+            } else {
+                self.paneContainerNode.profileSurfaceColor = nil
+            }
+
             let paneAreaExpansionDistance: CGFloat = 32.0
             let effectiveAreaExpansionFraction: CGFloat
             if self.state.isEditing {
@@ -6207,7 +6354,9 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
             // iPhone Duo: the panes and tabs stay out of the side strip; the container stays full width.
             let paneSideInsets = peerInfoSideInsets(layout: layout)
             self.paneContainerNode.stripInsets = (paneSideInsets.stripLeft, paneSideInsets.stripRight)
-            self.paneContainerNode.update(size: self.paneContainerNode.bounds.size, sideInset: paneSideInsets.paneSideInset, topInset: paneContainerTopInset, bottomInset: bottomInset, deviceMetrics: layout.deviceMetrics, visibleHeight: visibleHeight, expansionFraction: self.initialExpandPanes ? 1.0 : effectiveAreaExpansionFraction, presentationData: self.presentationData, data: self.data, areTabsHidden: self.headerNode.customNavigationContentNode != nil, disableTabSwitching: disableTabSwitching, navigationHeight: navigationHeight, transition: transition)
+            let transparentPane = self.conceptGlassEnabled
+            let panePresentationData = transparentPane ? self.conceptSurfaceData() : self.presentationData
+            self.paneContainerNode.update(size: self.paneContainerNode.bounds.size, sideInset: paneSideInsets.paneSideInset, topInset: paneContainerTopInset, bottomInset: bottomInset, deviceMetrics: layout.deviceMetrics, visibleHeight: visibleHeight, expansionFraction: self.initialExpandPanes ? 1.0 : effectiveAreaExpansionFraction, presentationData: panePresentationData, data: self.data, areTabsHidden: self.headerNode.customNavigationContentNode != nil, disableTabSwitching: disableTabSwitching, navigationHeight: navigationHeight, transition: transition)
           
             // iPhone Duo unfolded portrait: the search field ends left of the status island.
             let navigationButtonsWidth = layout.size.width - layout.safeInsets.left - layout.safeInsets.right - layout.navigationBarTrailingButtonsInset
@@ -6245,6 +6394,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
             let iconsInSideColumn = !layout.presentedInFormSheet && sideColumnRegion(layout: layout, minY: (layout.navigationBarStatusBarHeight ?? 0.0) + 8.0, reservedBelow: (self.controller?.parent as? TabBarController)?.verticalTabBarFrame(for: layout)) != nil
             self.headerNode.navigationRowRightButtonCount = peerInfoNavigationRowButtonCount(navigationSets.normal.right + navigationSets.expanded.right, iconsInSideColumn: iconsInSideColumn)
             self.applyNavigationButtons(showsPaneSet ? navigationSets.expanded : navigationSets.normal)
+            self.updateConceptBackdrop(transition: transition)
         }
     }
     
@@ -6397,7 +6547,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                 }
             }
             if !self.isSettings && !self.isMyProfile {
-                let paneAreaExpansionDistance: CGFloat = 32.0
+            let paneAreaExpansionDistance: CGFloat = 32.0
                 let paneAreaExpansionFinalPoint: CGFloat = self.paneContainerNode.frame.minY - navigationHeight
                 if targetContentOffset.pointee.y > paneAreaExpansionFinalPoint - paneAreaExpansionDistance && targetContentOffset.pointee.y < paneAreaExpansionFinalPoint {
                     targetContentOffset.pointee.y = paneAreaExpansionFinalPoint

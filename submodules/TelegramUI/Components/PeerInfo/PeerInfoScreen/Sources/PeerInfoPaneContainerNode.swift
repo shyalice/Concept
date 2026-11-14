@@ -605,8 +605,9 @@ final class PeerInfoPaneContainerNode: ASDisplayNode, ASGestureRecognizerDelegat
     
     let headerContainer: UIView
     
-    private let tabsBackgroundContainer: GlassBackgroundContainerView
+    private let tabsBackgroundContainer: UIView
     private let tabsBackgroundView: GlassBackgroundView
+    var profileSurfaceColor: UIColor?
     private let tabsContainer = ComponentView<Empty>()
     private var didJustReorderTabs = false
     
@@ -655,6 +656,7 @@ final class PeerInfoPaneContainerNode: ASDisplayNode, ASGestureRecognizerDelegat
     var requestPerformPeerMemberAction: ((PeerInfoMember, PeerMembersListAction) -> Void)?
     
     var currentPaneUpdated: ((Bool) -> Void)?
+    var profileBackgroundOffsetUpdated: (() -> Void)?
     var requestExpandTabs: (() -> Bool)?
     var requestUpdate: ((ContainedViewLayoutTransition) -> Void)?
 
@@ -683,14 +685,16 @@ final class PeerInfoPaneContainerNode: ASDisplayNode, ASGestureRecognizerDelegat
         self.initialGiftCollectionId = initialGiftCollectionId
         self.switchToMediaTarget = switchToMediaTarget
         
-        self.tabsBackgroundContainer = GlassBackgroundContainerView()
+        self.tabsBackgroundContainer = UIView()
         self.tabsBackgroundView = GlassBackgroundView()
+        self.tabsBackgroundView.clipsToBounds = true
+        self.tabsBackgroundView.layer.cornerCurve = .continuous
         
         self.headerContainer = SparseContainerView()
         
         super.init()
         
-        self.tabsBackgroundContainer.contentView.addSubview(self.tabsBackgroundView)
+        self.tabsBackgroundContainer.addSubview(self.tabsBackgroundView)
         self.headerContainer.addSubview(self.tabsBackgroundContainer)
     }
     
@@ -1144,6 +1148,10 @@ final class PeerInfoPaneContainerNode: ASDisplayNode, ASGestureRecognizerDelegat
                 pane.pane.node.frame = paneFrame
                 pane.pane.update(size: paneFrame.size, topInset: topInset + effectiveTabsHeight, sideInset: sideInset, bottomInset: bottomInset, deviceMetrics: deviceMetrics, visibleHeight: visibleHeight, isScrollingLockedAtTop: isScrollingLockedAtTop, expandProgress: expansionFraction, navigationHeight: navigationHeight, presentationData: presentationData, synchronous: true, transition: .immediate)
                 let paneNode = pane.pane.node
+                paneNode.profileBackgroundOffsetUpdated = { [weak self, weak paneNode] in
+                    guard let self, let paneNode, self.currentPane?.node === paneNode else { return }
+                    self.profileBackgroundOffsetUpdated?()
+                }
                 pane.pane.node.tabBarOffsetUpdated = { [weak self, weak paneNode] transition in
                     guard let strongSelf = self, let paneNode = paneNode, let currentPane = strongSelf.currentPane, paneNode === currentPane.node else {
                         return
@@ -1421,7 +1429,7 @@ final class PeerInfoPaneContainerNode: ASDisplayNode, ASGestureRecognizerDelegat
         let tabContainerFrame = CGRect(origin: CGPoint(x: tabContainerFrameOriginX, y: 10.0), size: tabsContainerEffectiveSize)
         
         transition.updateFrame(view: self.tabsBackgroundContainer, frame: tabContainerFrame)
-        self.tabsBackgroundContainer.update(size: tabContainerFrame.size, isDark: presentationData.theme.overallDarkAppearance, transition: ComponentTransition(transition))
+
         
         transition.updateFrame(view: self.tabsBackgroundView, frame: CGRect(origin: CGPoint(), size: tabContainerFrame.size))
         self.tabsBackgroundView.update(size: tabContainerFrame.size, cornerRadius: tabContainerFrame.height * 0.5, isDark: presentationData.theme.overallDarkAppearance, tintColor: .init(kind: .panel), transition: ComponentTransition(transition))

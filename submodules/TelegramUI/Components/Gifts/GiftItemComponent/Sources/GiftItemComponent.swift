@@ -1380,13 +1380,25 @@ public final class GiftItemComponent: Component {
             
             if let backgroundColor, let _ = secondBackgroundColor {
                 self.backgroundLayer.backgroundColor = backgroundColor.cgColor
+                self.backgroundLayer.borderWidth = 0.0
+                self.backgroundLayer.borderColor = nil
             } else {
                 if [.buttonIcon, .tableIcon].contains(component.mode) {
-                    
+                    self.backgroundLayer.borderWidth = 0.0
+                    self.backgroundLayer.borderColor = nil
                 } else if case .upgradePreview = component.mode {
                     self.backgroundLayer.backgroundColor = component.theme.list.itemModalBlocksBackgroundColor.cgColor
+                    self.backgroundLayer.borderWidth = 0.0
+                    self.backgroundLayer.borderColor = nil
                 } else {
                     self.backgroundLayer.backgroundColor = component.theme.list.itemBlocksBackgroundColor.cgColor
+                    if component.style == .glass {
+                        self.backgroundLayer.borderWidth = 0.5
+                        self.backgroundLayer.borderColor = UIColor(white: component.theme.overallDarkAppearance ? 1.0 : 0.0, alpha: component.theme.overallDarkAppearance ? 0.12 : 0.08).cgColor
+                    } else {
+                        self.backgroundLayer.borderWidth = 0.0
+                        self.backgroundLayer.borderColor = nil
+                    }
                 }
             }
             

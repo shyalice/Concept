@@ -1,4 +1,5 @@
 import SGSimpleSettings // MARK: Swiftgram
+import ConceptBadges
 import Foundation
 import UIKit
 import AsyncDisplayKit
@@ -131,6 +132,8 @@ final class PeerInfoHeaderNode: ASDisplayNode {
     let avatarOverlayNode: PeerInfoEditingAvatarOverlayNode
     let titleNodeContainer: ASDisplayNode
     let titleNodeRawContainer: ASDisplayNode
+    private let conceptBadgeView = ConceptBadgeView()
+    private let expandedConceptBadgeView = ConceptBadgeView()
     let titleNode: MultiScaleTextNode
     var standardTitle: ComponentView<Empty>?
     
@@ -219,6 +222,8 @@ final class PeerInfoHeaderNode: ASDisplayNode {
     let searchBarContainer: SparseNode
     let editingEdgeEffectView: EdgeEffectView
     
+    private(set) var conceptThemeFraction: CGFloat = 0.0
+    var conceptDominantColor: UIColor?
     var musicBackground: UIView?
     var music: ComponentView<Empty>?
     var walletBalance: ComponentView<Empty>?
@@ -697,8 +702,9 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         } else {
             currentWalletBalance = nil
         }
-        let musicHeight: CGFloat = hasBackground || self.isAvatarExpanded ? 24.0 : 16.0
-        let bottomInset: CGFloat = currentSavedMusic != nil ? musicHeight : 0.0
+        let usesProfileSurface = !self.isSettings && !isMediaOnly && !state.isEditing
+        let musicHeight: CGFloat = usesProfileSurface ? 30.0 : (hasBackground || self.isAvatarExpanded ? 24.0 : 16.0)
+        let bottomInset: CGFloat = currentSavedMusic != nil ? musicHeight + (usesProfileSurface ? 12.0 : 0.0) : 0.0
         let balanceInset: CGFloat = currentWalletBalance != nil ? 32.0 : 0.0
         
         let isLandscape = containerInset > 16.0
@@ -750,11 +756,11 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         
         let avatarFrame = CGRect(origin: CGPoint(x: hasStrip ? bandCenteredOrigin(width: avatarSize, margin: 16.0) : floor((width - avatarSize) / 2.0), y: statusBarHeight + 22.0), size: CGSize(width: avatarSize, height: avatarSize))
         
-        let regularNavigationContentsAccentColor: UIColor = peer?.effectiveProfileColor != nil ? .white : presentationData.theme.list.itemAccentColor
+        let regularNavigationContentsAccentColor: UIColor = hasBackground ? .white : presentationData.theme.list.itemAccentColor
         let collapsedHeaderNavigationContentsAccentColor = presentationData.theme.list.itemAccentColor
         let expandedAvatarNavigationContentsAccentColor: UIColor = .white
         
-        let regularNavigationContentsPrimaryColor: UIColor = peer?.effectiveProfileColor != nil ? .white : presentationData.theme.list.itemPrimaryTextColor
+        let regularNavigationContentsPrimaryColor: UIColor = hasBackground ? .white : presentationData.theme.list.itemPrimaryTextColor
         let collapsedHeaderNavigationContentsPrimaryColor = presentationData.theme.list.itemPrimaryTextColor
         let expandedAvatarNavigationContentsPrimaryColor: UIColor = .white
         
@@ -813,15 +819,15 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         let collapsedHeaderNavigationContentsSecondaryColor = presentationData.theme.list.itemSecondaryTextColor
         let expandedAvatarNavigationContentsSecondaryColor: UIColor = .white
         
-        let navigationContentsAccentColor: UIColor
-        let navigationContentsPrimaryColor: UIColor
-        let navigationContentsSecondaryColor: UIColor
-        let navigationContentsCanBeExpanded: Bool
+        var navigationContentsAccentColor: UIColor
+        var navigationContentsPrimaryColor: UIColor
+        var navigationContentsSecondaryColor: UIColor
+        var navigationContentsCanBeExpanded: Bool
         
         let contentButtonBackgroundColor: UIColor
         let contentButtonForegroundColor: UIColor
         
-        let headerButtonBackgroundColor: UIColor
+        var headerButtonBackgroundColor: UIColor
         
         var panelWithAvatarHeight: CGFloat = 35.0 + avatarSize + balanceInset
         if threadData != nil {
@@ -834,7 +840,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         if transition.isAnimated {
             navigationTransition = transition
         } else {
-            navigationTransition = animateHeader ? .animated(duration: 0.2, curve: .easeInOut) : .immediate
+            navigationTransition = usesProfileSurface ? .immediate : (animateHeader ? .animated(duration: 0.2, curve: .easeInOut) : .immediate)
         }
         
         let editingEdgeEffectHeight: CGFloat = 40.0
@@ -886,7 +892,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         let backgroundBannerAlpha: CGFloat
         
         do {
-            let backgroundTransitionStepDistance: CGFloat = 50.0
+            let backgroundTransitionStepDistance: CGFloat = usesProfileSurface ? 120.0 : 50.0
             var backgroundTransitionDistance: CGFloat = navigationHeight + panelWithAvatarHeight - backgroundTransitionStepDistance
             if self.isSettings || self.isMyProfile {
                 backgroundTransitionDistance -= 100.0
@@ -898,7 +904,11 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                 innerBackgroundTransitionFraction = max(0.0, min(1.0, contentOffset / backgroundTransitionStepDistance))
             }
             
-            if state.isEditing {
+            let f = innerBackgroundTransitionFraction
+            self.conceptThemeFraction = f * f * (3.0 - 2.0 * f)
+            if usesProfileSurface && !state.isEditing {
+                backgroundBannerAlpha = 1.0 - self.conceptThemeFraction
+            } else if state.isEditing {
                 backgroundBannerAlpha = 0.0
             } else {
                 if 1.0 - innerBackgroundTransitionFraction < 0.5 {
@@ -952,7 +962,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             ratingBorderColor = .clear
             ratingForegroundColor = .clear
         } else {
-            let effectiveTransitionFraction: CGFloat = innerBackgroundTransitionFraction < 0.5 ? 0.0 : 1.0
+            let effectiveTransitionFraction: CGFloat = usesProfileSurface ? self.conceptThemeFraction : (innerBackgroundTransitionFraction < 0.5 ? 0.0 : 1.0)
             
             navigationContentsAccentColor = regularNavigationContentsAccentColor.mixedWith(collapsedHeaderNavigationContentsAccentColor, alpha: effectiveTransitionFraction)
             navigationContentsPrimaryColor = regularNavigationContentsPrimaryColor.mixedWith(collapsedHeaderNavigationContentsPrimaryColor, alpha: effectiveTransitionFraction)
@@ -999,6 +1009,15 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             }
         }
         
+        if usesProfileSurface && (hasBackground || self.isAvatarExpanded) && !UIAccessibility.isReduceTransparencyEnabled {
+            let f = self.conceptThemeFraction
+            navigationContentsAccentColor = UIColor.white.mixedWith(collapsedHeaderNavigationContentsAccentColor, alpha: f)
+            navigationContentsPrimaryColor = UIColor.white.mixedWith(collapsedHeaderNavigationContentsPrimaryColor, alpha: f)
+            navigationContentsSecondaryColor = UIColor.white.withAlphaComponent(0.78).mixedWith(collapsedHeaderNavigationContentsSecondaryColor, alpha: f)
+            navigationContentsCanBeExpanded = f >= 1.0
+            headerButtonBackgroundColor = conceptProfileSurfaceColor(presentationData.theme, fraction: f, decorative: true)
+        }
+
         do {
             self.currentCredibilityIcon = credibilityIcon
             
@@ -1233,8 +1252,14 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             self.titleExpandedVerifiedIconSize = expandedIconSize
         }
         
-        self.expansionGlassTint = navigationContentsCanBeExpanded ? nil : headerButtonBackgroundColor
-        self.updateNavigationGlass?(navigationContentsCanBeExpanded ? .plain : .tinted(headerButtonBackgroundColor), navigationTransition)
+        let profileOverlay = usesProfileSurface && (hasBackground || self.isAvatarExpanded) && !UIAccessibility.isReduceTransparencyEnabled && self.conceptThemeFraction < 0.5
+        if usesProfileSurface {
+            self.expansionGlassTint = nil
+            self.updateNavigationGlass?(profileOverlay ? .profileOverlay : .plain, navigationTransition)
+        } else {
+            self.expansionGlassTint = navigationContentsCanBeExpanded ? nil : headerButtonBackgroundColor
+            self.updateNavigationGlass?(navigationContentsCanBeExpanded ? .plain : .tinted(headerButtonBackgroundColor), navigationTransition)
+        }
         
         self.titleNode.updateTintColor(color: navigationContentsPrimaryColor, transition: navigationTransition)
         self.subtitleNode.updateTintColor(color: navigationContentsSecondaryColor, transition: navigationTransition)
@@ -1255,9 +1280,6 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         
         let expandedAvatarListSize = CGSize(width: width, height: expandedAvatarListHeight)
                 
-        var isPremium = false
-        var isVerified = false
-        var isFake = false
         let titleStringText: String
         let smallTitleAttributes: MultiScaleTextState.Attributes
         let titleAttributes: MultiScaleTextState.Attributes
@@ -1268,11 +1290,6 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         var subtitleIsButton: Bool = false
         var panelSubtitleString: (text: String, attributes: MultiScaleTextState.Attributes)?
         let usernameString: (text: String, attributes: MultiScaleTextState.Attributes)
-        if let peer = peer {
-            isPremium = peer.isPremium
-            isVerified = peer.isVerified
-            isFake = peer.isFake || peer.isScam
-        }
         
         let titleShadowColor: UIColor? = nil
         
@@ -1448,14 +1465,35 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             usernameString = ("", MultiScaleTextState.Attributes(font: Font.regular(16.0), color: .white))
         }
         
+        let conceptPeerKey: String? = peer.flatMap { peer in
+            !peer.isFake && !peer.isScam ? peer.id.conceptBadgeKey : nil
+        }
+        let conceptBadgeWidth = self.conceptBadgeView.update(peerId: conceptPeerKey, color: navigationContentsAccentColor, height: 26)
+        let conceptBadgeBaselineOffset: CGFloat = conceptPeerKey.flatMap { ConceptBadgeService.shared.badge(peerId: $0) }.map { !$0.hasRosette && $0.glyph == .butterfly ? 2.5 : 0.0 } ?? 0.0
+        _ = self.expandedConceptBadgeView.update(peerId: conceptPeerKey, color: navigationContentsAccentColor, height: 26)
+        if self.conceptBadgeView.superview == nil { self.titleNode.stateNode(forKey: TitleNodeStateRegular)?.view.addSubview(self.conceptBadgeView) }
+        if self.expandedConceptBadgeView.superview == nil { self.titleNode.stateNode(forKey: TitleNodeStateExpanded)?.view.addSubview(self.expandedConceptBadgeView) }
+        self.conceptBadgeView.changed = { [weak self] in self?.requestUpdateLayout?(false) }
+        let badgeAction: (String) -> Void = { [weak self] userId in
+            guard let self, let peer = self.peer else { return }
+            presentConceptBadgeInfo(context: self.context, peerId: userId, userName: peer.compactDisplayTitle)
+        }
+        self.conceptBadgeView.activated = badgeAction
+        self.expandedConceptBadgeView.activated = badgeAction
+
         let textSideInset: CGFloat = 36.0
         let expandedAvatarHeight: CGFloat = expandedAvatarListSize.height
         
-        var titleConstrainedSize = CGSize(width: width - stripLeft - stripRight - textSideInset * 2.0 - (isPremium || isVerified || isFake ? 20.0 : 0.0), height: .greatestFiniteMagnitude)
-        if self.navigationRowRightButtonCount > 1 {
-            titleConstrainedSize.width -= 60.0
+        var titleIconsWidth: CGFloat = conceptBadgeWidth > 0 ? conceptBadgeWidth + 4 : 0
+        let nativeIconSizes: [(CGSize?, CGSize?)] = [(self.credibilityIconSize, self.titleExpandedCredibilityIconSize), (self.statusIconSize, self.titleExpandedStatusIconSize), (self.verifiedIconSize, self.titleExpandedVerifiedIconSize)]
+        for (regular, expanded) in nativeIconSizes {
+            let iconWidth = max(regular?.width ?? 0, expanded?.width ?? 0)
+            if iconWidth > 0 { titleIconsWidth += iconWidth + 4 }
         }
-        
+        var availableTitleWidth = width - stripLeft - stripRight - textSideInset * 2 - titleIconsWidth
+        if self.navigationRowRightButtonCount > 1 { availableTitleWidth -= 60 }
+        let titleConstrainedSize = CGSize(width: max(0, availableTitleWidth), height: .greatestFiniteMagnitude)
+
         let titleNodeLayout = self.titleNode.updateLayout(text: titleStringText, states: [
             TitleNodeStateRegular: MultiScaleTextState(attributes: titleAttributes, constrainedSize: titleConstrainedSize),
             TitleNodeStateExpanded: MultiScaleTextState(attributes: smallTitleAttributes, constrainedSize: titleConstrainedSize)
@@ -1767,12 +1805,23 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             }
         }
         
+        if conceptBadgeWidth > 0 {
+            titleHorizontalOffset -= (conceptBadgeWidth + 4) / 2
+            transition.updateFrame(view: self.conceptBadgeView, frame: CGRect(x: nextIconX + 4, y: floor((titleSize.height - 26) / 2) + conceptBadgeBaselineOffset, width: conceptBadgeWidth, height: 26))
+            transition.updateFrame(view: self.expandedConceptBadgeView, frame: CGRect(x: nextExpandedIconX + 4, y: floor((titleExpandedSize.height - 26) / 2) + 1 + conceptBadgeBaselineOffset, width: conceptBadgeWidth, height: 26))
+        }
+
         var titleFrame: CGRect
         var subtitleFrame: CGRect
         let usernameFrame: CGRect
         let usernameSpacing: CGFloat = 4.0
         
         let expandedTitleScale: CGFloat = 0.8
+        if usesProfileSurface {
+            let leadingWidth: CGFloat = verifiedIcon != .verified && (self.verifiedIconSize?.width ?? 0.0) > 0.0 ? (self.titleExpandedVerifiedIconSize?.width ?? 0.0) + 4.0 : 0.0
+            let trailingEdge = nextExpandedIconX + (conceptBadgeWidth > 0.0 ? conceptBadgeWidth + 4.0 : 0.0)
+            titleExpandedHorizontalOffset = (titleSize.width - trailingEdge + leadingWidth) * 0.5 * expandedTitleScale
+        }
         
         var bottomShadowHeight: CGFloat = 88.0
         if !self.isSettings && !self.isMyProfile {
@@ -1796,6 +1845,9 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                 minTitleFrame.origin.y -= 83.0
             }
 
+            if usesProfileSurface {
+                minTitleFrame.origin.x = bandCenteredOrigin(width: minTitleSize.width, margin: textSideInset)
+            }
             titleFrame = CGRect(origin: CGPoint(x: minTitleFrame.midX - titleSize.width / 2.0, y: minTitleFrame.midY - titleSize.height / 2.0), size: titleSize)
             
             var titleCollapseOffset = titleFrame.midY - statusBarHeight - titleLockOffset
@@ -1809,6 +1861,9 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             subtitleFrame.origin.x += subtitleRatingInset
             if let ratingView = self.subtitleRating?.view as? PeerInfoRatingComponent.View {
                 subtitleFrame.origin.x -= ratingView.visibleLeftInset
+            }
+            if usesProfileSurface && usernameSize.width == 0.0 {
+                subtitleFrame.origin.x = bandCenteredOrigin(width: subtitleSize.width + subtitleRatingInset, margin: 16.0) + subtitleRatingInset
             }
             usernameFrame = CGRect(origin: CGPoint(x: width - usernameSize.width - 16.0 - stripRight, y: minTitleFrame.midY - usernameSize.height / 2.0), size: usernameSize)
         } else {
@@ -2249,7 +2304,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         
         let buttonsTransitionFraction: CGFloat = 1.0 - max(0.0, min(1.0, buttonsTransitionDistance / buttonsTransitionDistanceNorm))
         
-        let buttonSpacing: CGFloat = 8.0
+        let buttonSpacing: CGFloat = usesProfileSurface ? 14.0 : 8.0
         let buttonSideInset = max(16.0, containerInset)
         
         let actionButtonWidth = (width - stripLeft - stripRight - buttonSideInset * 2.0 + buttonSpacing) / CGFloat(actionButtonKeys.count) - buttonSpacing
@@ -2308,9 +2363,13 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             }
         }
         
-        let buttonWidth = (width - stripLeft - stripRight - buttonSideInset * 2.0 + buttonSpacing) / CGFloat(buttonKeys.count) - buttonSpacing
-        let buttonSize = CGSize(width: buttonWidth, height: 58.0)
-        var buttonRightOrigin = CGPoint(x: width - stripRight - buttonSideInset, y: backgroundHeight - bottomInset - 16.0 - buttonSize.height)
+        let availableButtonWidth = width - stripLeft - stripRight - buttonSideInset * 2.0
+        let buttonCount = CGFloat(max(1, buttonKeys.count))
+        let buttonWidth = usesProfileSurface ? min(62.0, (availableButtonWidth - (buttonCount - 1.0) * buttonSpacing) / buttonCount) : (availableButtonWidth + buttonSpacing) / buttonCount - buttonSpacing
+        let buttonSize = CGSize(width: buttonWidth, height: usesProfileSurface ? 62.0 : 58.0)
+        let buttonGroupWidth = buttonCount * buttonWidth + (buttonCount - 1.0) * buttonSpacing
+        let buttonGroupRight = usesProfileSurface ? stripLeft + (width - stripLeft - stripRight + buttonGroupWidth) * 0.5 : width - stripRight - buttonSideInset
+        var buttonRightOrigin = CGPoint(x: buttonGroupRight, y: backgroundHeight - bottomInset - 16.0 - buttonSize.height)
         if !actionButtonKeys.isEmpty {
             buttonRightOrigin.y += actionButtonSize.height + 24.0
         }
@@ -2318,6 +2377,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         transition.updateFrameAdditive(node: self.buttonsBackgroundNode, frame: CGRect(origin: CGPoint(x: 0.0, y: buttonRightOrigin.y), size: CGSize(width: width, height: buttonSize.height + 40.0)))
         self.buttonsBackgroundNode.update(size: self.buttonsBackgroundNode.bounds.size, transition: transition)
         self.buttonsBackgroundNode.updateColor(color: contentButtonBackgroundColor, enableBlur: true, transition: transition)
+        self.buttonsBackgroundNode.isHidden = usesProfileSurface
         if isReduceTransparencyEnabled() {
             self.buttonsBackgroundNode.alpha = 0.1
         }
@@ -2475,7 +2535,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             transition: ComponentTransition(transition),
             component: AnyComponent(PeerInfoCoverComponent(
                 context: self.context,
-                subject: backgroundCoverSubject,
+                subject: !self.isSettings && !isMediaOnly && !state.isEditing && !UIAccessibility.isReduceTransparencyEnabled ? nil : backgroundCoverSubject,
                 files: [:],
                 isDark: presentationData.theme.overallDarkAppearance,
                 avatarCenter: apparentAvatarFrame.center.offsetBy(dx: bannerInset, dy: 0.0),
@@ -2581,9 +2641,10 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             self.updateUnderHeaderContentsAlpha?(1.0 - realAreaExpansionFraction, transition)
         }
         
-        self.headerEdgeEffectView.update(content: presentationData.theme.list.plainBackgroundColor, blur: true, rect: edgeEffectFrame, edge: .top, edgeSize: edgeEffectHeight, transition: ComponentTransition(transition))
-        
-        navigationTransition.updateAlpha(layer: self.headerEdgeEffectView.layer, alpha: state.isEditing ? 0.0 : 1.0)
+        let profileEdgeColor: UIColor = usesProfileSurface && !UIAccessibility.isReduceTransparencyEnabled ? .clear : presentationData.theme.list.plainBackgroundColor
+        self.headerEdgeEffectView.update(content: profileEdgeColor, blur: !usesProfileSurface, rect: edgeEffectFrame, edge: .top, edgeSize: edgeEffectHeight, transition: ComponentTransition(transition))
+        let edgeVisibility = usesProfileSurface ? max(0.0, min(1.0, contentOffset / max(1.0, navigationHeight))) : 1.0
+        transition.updateAlpha(layer: self.headerEdgeEffectView.layer, alpha: state.isEditing ? 0.0 : edgeVisibility)
         
         if !state.isEditing {
             if !isSettings && !isMyProfile {
@@ -2669,19 +2730,10 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                 environment: {},
                 containerSize: CGSize(width: maximumBalanceWidth, height: 20.0)
             )
-            let balanceFrame: CGRect
-            if self.isAvatarExpanded {
-                let lastRowFrame = usernameFrame.maxY > subtitleFrame.maxY ? usernameFrame : subtitleFrame
-                balanceFrame = CGRect(origin: CGPoint(
-                    x: width - stripRight - 16.0 - balanceSize.width,
-                    y: floor(lastRowFrame.midY + titleOffset - balanceSize.height * 0.5)
-                ), size: balanceSize)
-            } else {
-                balanceFrame = CGRect(origin: CGPoint(
-                    x: stripLeft + floor((width - stripLeft - stripRight - balanceSize.width) * 0.5),
-                    y: max(subtitleFrame.maxY, usernameFrame.maxY) + titleOffset + 8.0
-                ), size: balanceSize)
-            }
+            let balanceFrame = CGRect(origin: CGPoint(
+                x: stripLeft + floor((width - stripLeft - stripRight - balanceSize.width) * 0.5),
+                y: max(subtitleFrame.maxY, usernameFrame.maxY) + titleOffset + 8.0
+            ), size: balanceSize)
             if let balanceView = balance.view {
                 balanceView.isAccessibilityElement = true
                 balanceView.accessibilityLabel = presentationData.strings.Wallet_Send_Balance(formattedBalance).string
@@ -2698,13 +2750,14 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                 } else {
                     transition.updateFrame(view: balanceView, frame: balanceFrame)
                 }
-                ContainedViewLayoutTransition.animated(duration: 0.2, curve: .easeInOut).updateAlpha(layer: balanceView.layer, alpha: backgroundBannerAlpha * (1.0 - titleCollapseFraction))
+                let balanceAlpha: CGFloat = (self.isAvatarExpanded || isSearching || state.isEditing) ? 0.0 : (backgroundBannerAlpha * (1.0 - titleCollapseFraction))
+                transition.updateAlpha(layer: balanceView.layer, alpha: balanceAlpha)
             }
         }
 
         if currentSavedMusic != nil {
             var musicTransition = transition
-            if hasBackground || self.isAvatarExpanded {
+            if !usesProfileSurface && (hasBackground || self.isAvatarExpanded) {
                 if self.musicBackground == nil {
                     musicTransition = .immediate
                 }
@@ -2761,9 +2814,9 @@ final class PeerInfoHeaderNode: ASDisplayNode {
 
                 let musicString = NSMutableAttributedString()
                 // Keep music inside the profile band, including when a side strip is visible.
-                musicString.append(NSAttributedString(string: track ?? "", font: Font.semibold(12.0), textColor: isOverlay ? .white : presentationData.theme.list.itemAccentColor))
+                musicString.append(NSAttributedString(string: track ?? "", font: Font.semibold(usesProfileSurface ? 13.0 : 12.0), textColor: isOverlay ? .white : presentationData.theme.list.itemAccentColor))
                 let artistSeparatorIndex = musicString.length
-                musicString.append(NSAttributedString(string: " \(artist)", font: Font.regular(12.0), textColor: stripSecondaryColor))
+                musicString.append(NSAttributedString(string: " \(artist)", font: Font.regular(usesProfileSurface ? 13.0 : 12.0), textColor: stripSecondaryColor))
                 musicString.addAttribute(.kern, value: CGFloat(2.0), range: NSRange(location: artistSeparatorIndex, length: 1))
 
                 let musicSize = music.update(
@@ -2778,7 +2831,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                                     ),
                                     AnyComponentWithIdentity(
                                         id: "label",
-                                        component: AnyComponent(MarqueeComponent(attributedText: musicString, maxWidth: max(1.0, musicBandWidth - 96.0)))
+                                        component: AnyComponent(MarqueeComponent(attributedText: musicString, maxWidth: max(1.0, (usesProfileSurface ? min(musicBandWidth - 32.0, 330.0) : musicBandWidth) - 64.0)))
                                     ),
                                     AnyComponentWithIdentity(
                                         id: "arrow",
@@ -2786,10 +2839,15 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                                     )
                                 ], spacing: 4.0)
                             ),
-                            minSize: CGSize(width: musicBandWidth, height: musicHeight),
+                            background: usesProfileSurface ? AnyComponent(ConceptProfileMaterialComponent(isDark: isOverlay || presentationData.theme.overallDarkAppearance, fallbackColor: conceptProfileSurfaceColor(presentationData.theme, dominantColor: self.conceptDominantColor, fraction: self.conceptThemeFraction, decorative: isOverlay))) : nil,
+                            minSize: CGSize(width: usesProfileSurface ? 0.0 : musicBandWidth, height: musicHeight),
+                            contentInsets: usesProfileSurface ? UIEdgeInsets(top: 0.0, left: 12.0, bottom: 0.0, right: 12.0) : UIEdgeInsets(),
                             action: { [weak self] in
                                 self?.displaySavedMusic?()
                             },
+                            animateAlpha: false,
+                            animateScale: true,
+                            rasterizeOnScaleAnimation: false,
                             // Its shown text; nothing while the track's title is still loading.
                             accessibility: ComponentAccessibility(label: musicString.string.trimmingCharacters(in: .whitespacesAndNewlines), isHidden: musicString.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         )
@@ -2797,7 +2855,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                     environment: {},
                     containerSize: CGSize(width: musicBandWidth, height: musicHeight)
                 )
-                let musicFrame = CGRect(origin: CGPoint(x: stripLeft, y: (apparentBackgroundHeight - backgroundHeight) + backgroundHeight - musicHeight - (hasBackground || self.isAvatarExpanded ? 0.0 : 4.0) + 1.0 - UIScreenPixel), size: musicSize)
+                let musicFrame = CGRect(origin: CGPoint(x: usesProfileSurface ? stripLeft + floorToScreenPixels((musicBandWidth - musicSize.width) * 0.5) : stripLeft, y: apparentBackgroundHeight - musicHeight - (usesProfileSurface ? 8.0 : (hasBackground || self.isAvatarExpanded ? 0.0 : 4.0)) + 1.0 - UIScreenPixel), size: musicSize)
                 if let musicView = music.view {
                     self.regularContentNode.accessibilityTrailingView = musicView
                     if musicView.superview == nil {
@@ -2926,6 +2984,10 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         }
         
         if !(self.state?.isEditing ?? false) {
+            let badge = self.isAvatarExpanded ? self.expandedConceptBadgeView : self.conceptBadgeView
+            if !badge.isHidden, badge.alpha > 0.0, badge.bounds.insetBy(dx: -3.0, dy: -6.0).contains(self.view.convert(point, to: badge)) {
+                return badge
+            }
             switch self.currentCredibilityIcon {
             case .premium:
                 let iconFrame = self.titleCredibilityIconView.convert(self.titleCredibilityIconView.bounds, to: self.view)

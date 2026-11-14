@@ -9,6 +9,7 @@ sgdeps = [
     "//Swiftgram/SGRegDate:SGRegDate",
     "//Swiftgram/SGRegDateScheme:SGRegDateScheme",
     "//Swiftgram/SGDebugUI:SGDebugUI",
+    "//Swiftgram/ConceptSettingsUI:ConceptSettingsUI",
 ]
 #
 # MARK: Swiftgram
@@ -27,7 +28,8 @@ swift_library(
     copts = [
         "-warnings-as-errors",
     ],
-    deps = sgdeps + [ # MARK: Swiftgram
+    deps = sgdeps + [
+        "//submodules/ConceptBadges", # MARK: Swiftgram
         "//submodules/UrlWhitelist",
         "//submodules/TelegramUI/Components/NavigationBarNode",
         "//submodules/TelegramUI/Components/NavigationBarComponent",

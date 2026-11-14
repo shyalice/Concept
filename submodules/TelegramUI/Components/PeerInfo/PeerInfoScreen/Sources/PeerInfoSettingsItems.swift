@@ -22,6 +22,7 @@ enum SettingsSection: Int, CaseIterable {
     case wallet
     case proxy
     // MARK: Swiftgram
+    case concept
     case swiftgram
     case swiftgramPro
     //
@@ -185,6 +186,13 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
                 interaction.openSettings(.wallet)
             }))
         }
+        items[.myProfile]!.append(PeerInfoScreenDisclosureItem(id: 1, text: "Enter secret code", icon: PresentationResourcesSettings.security, action: {
+            interaction.openSettings(.enterSecretCode)
+        }))
+
+        items[.myProfile]!.append(PeerInfoScreenDisclosureItem(id: 2, text: "Manage secret codes", icon: PresentationResourcesSettings.passkeys, action: {
+            interaction.openSettings(.manageSecretCodes)
+        }))
         
         if !settings.proxySettings.servers.isEmpty {
             let proxyType: String
@@ -210,6 +218,9 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
     let sgWebSettings = context.currentAppConfiguration.with({ $0 }).sgWebSettings
     items[.swiftgram]!.append(contentsOf: sgPeerInfoSettingsItems(context: context, paymentsEnabled: sgWebSettings.global.paymentsEnabled, presentationData: presentationData, interaction: interaction))
     //
+    items[.concept]!.append(PeerInfoScreenDisclosureItem(id: 1, label: .text(""), text: "Concept", icon: PresentationResourcesSettings.conceptPurple, action: {
+        interaction.openSettings(.concept)
+    }))
 
     var appIndex = 1000
     if let settings = data.globalSettings {

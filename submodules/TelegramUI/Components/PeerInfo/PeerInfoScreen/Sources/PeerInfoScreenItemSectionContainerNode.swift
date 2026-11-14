@@ -7,6 +7,22 @@ import TelegramPresentationData
 
 final class PeerInfoScreenItemSectionContainerNode: ASDisplayNode {
     private let backgroundNode: ASDisplayNode
+    private let cardNode = ASDisplayNode()
+    private let material = ConceptProfileMaterialView()
+    private var lastLayout: (AccountContext, CGFloat, UIEdgeInsets, Bool, [PeerInfoScreenItem], Bool)?
+
+    func updateBackdrop(tintColor: UIColor, targetColor: UIColor, fraction: CGFloat, isDark: Bool) {
+        self.material.updateAppearance(tintColor: tintColor, targetColor: targetColor, fraction: fraction, isDark: isDark)
+    }
+
+    func updateBackdrop(color: UIColor, isDark: Bool) {
+        self.material.updateAppearance(color: color, isDark: isDark)
+    }
+
+    func updateAppearance(presentationData: PresentationData) {
+        guard let (context, width, safeInsets, hasCorners, items, glass) = self.lastLayout else { return }
+        _ = self.update(context: context, width: width, safeInsets: safeInsets, hasCorners: hasCorners, presentationData: presentationData, items: items, glass: glass, transition: .immediate)
+    }
     private let topSeparatorNode: ASDisplayNode
     private let bottomSeparatorNode: ASDisplayNode
     private let itemContainerNode: ASDisplayNode
@@ -31,12 +47,24 @@ final class PeerInfoScreenItemSectionContainerNode: ASDisplayNode {
         
         self.addSubnode(self.backgroundNode)
         self.addSubnode(self.itemContainerNode)
+        self.cardNode.clipsToBounds = true
+        self.cardNode.layer.cornerCurve = .continuous
+        self.cardNode.layer.cornerRadius = 24.0
+        self.material.isUserInteractionEnabled = false
+        self.cardNode.view.addSubview(self.material)
+        self.itemContainerNode.addSubnode(self.cardNode)
         self.addSubnode(self.topSeparatorNode)
         self.addSubnode(self.bottomSeparatorNode)
     }
     
-    func update(context: AccountContext, width: CGFloat, safeInsets: UIEdgeInsets, hasCorners: Bool, presentationData: PresentationData, items: [PeerInfoScreenItem], transition: ContainedViewLayoutTransition) -> CGFloat {
-        self.backgroundNode.backgroundColor = presentationData.theme.list.itemBlocksBackgroundColor
+    func update(context: AccountContext, width: CGFloat, safeInsets: UIEdgeInsets, hasCorners: Bool, presentationData: PresentationData, items: [PeerInfoScreenItem], glass: Bool = false, transition: ContainedViewLayoutTransition) -> CGFloat {
+        let useGlass = glass && hasCorners && !UIAccessibility.isReduceTransparencyEnabled
+        self.lastLayout = (context, width, safeInsets, hasCorners, items, glass)
+        self.cardNode.isHidden = !useGlass
+        self.cardNode.backgroundColor = .clear
+        self.cardNode.layer.borderWidth = 0.0
+        self.cardNode.layer.borderColor = nil
+        self.backgroundNode.backgroundColor = useGlass ? .clear : presentationData.theme.list.itemBlocksBackgroundColor
         self.topSeparatorNode.backgroundColor = presentationData.theme.list.itemBlocksSeparatorColor
         self.bottomSeparatorNode.backgroundColor = presentationData.theme.list.itemBlocksSeparatorColor
         
@@ -58,12 +86,12 @@ final class PeerInfoScreenItemSectionContainerNode: ASDisplayNode {
                 wasAdded = true
                 itemNode = item.node()
                 self.itemNodes[item.id] = itemNode
-                self.itemContainerNode.addSubnode(itemNode)
-                itemNode.bringToFrontForHighlight = { [weak self, weak itemNode] in
-                    guard let strongSelf = self, let itemNode = itemNode else {
+                (useGlass && !(item is PeerInfoScreenHeaderItem) && !(item is PeerInfoScreenCommentItem) ? self.cardNode : self.itemContainerNode).addSubnode(itemNode)
+                itemNode.bringToFrontForHighlight = { [weak itemNode] in
+                    guard let itemNode = itemNode else {
                         return
                     }
-                    strongSelf.view.bringSubviewToFront(itemNode.view)
+                    itemNode.view.superview?.bringSubviewToFront(itemNode.view)
                 }
             }
             
@@ -87,8 +115,11 @@ final class PeerInfoScreenItemSectionContainerNode: ASDisplayNode {
                 bottomItem = items[i + 1]
             }
             
-            let itemHeight = itemNode.update(context: context, width: width, safeInsets: safeInsets, presentationData: presentationData, item: item, topItem: topItem, bottomItem: bottomItem, hasCorners: hasCorners, transition: itemTransition)
-            let itemFrame = CGRect(origin: CGPoint(x: 0.0, y: contentHeight), size: CGSize(width: width, height: itemHeight))
+            let itemHeight = itemNode.update(context: context, width: width, safeInsets: safeInsets, presentationData: presentationData, item: item, topItem: topItem, bottomItem: bottomItem, hasCorners: hasCorners && !useGlass, transition: itemTransition)
+            let isCardRow = useGlass && !(item is PeerInfoScreenHeaderItem) && !(item is PeerInfoScreenCommentItem)
+            let parent = isCardRow ? self.cardNode : self.itemContainerNode
+            if itemNode.supernode !== parent { parent.addSubnode(itemNode) }
+            let itemFrame = CGRect(origin: CGPoint(x: 0.0, y: contentHeight - (isCardRow ? contentWithBackgroundOffset : 0.0)), size: CGSize(width: width, height: itemHeight))
             itemTransition.updateFrame(node: itemNode, frame: itemFrame)
             if wasAdded {
                 itemNode.alpha = 0.0
@@ -124,6 +155,12 @@ final class PeerInfoScreenItemSectionContainerNode: ASDisplayNode {
         
         transition.updateFrame(node: self.itemContainerNode, frame: CGRect(origin: CGPoint(), size: CGSize(width: width, height: contentHeight)))
         transition.updateFrame(node: self.backgroundNode, frame: CGRect(origin: CGPoint(x: 0.0, y: contentWithBackgroundOffset), size: CGSize(width: width, height: max(0.0, contentWithBackgroundHeight - contentWithBackgroundOffset))))
+        // A single clipped container owns both the fill and its rows. Bounds
+        // and children share the same transition; no independently timed mask.
+        transition.updateFrame(node: self.cardNode, frame: self.backgroundNode.frame)
+        transition.updateFrame(view: self.material, frame: CGRect(origin: .zero, size: self.backgroundNode.frame.size))
+        self.material.update(size: self.backgroundNode.frame.size, radius: 24.0, color: presentationData.theme.list.itemModalBlocksBackgroundColor, isDark: presentationData.theme.overallDarkAppearance, transition: transition)
+        self.cardNode.view.sendSubviewToBack(self.material)
         transition.updateFrame(node: self.topSeparatorNode, frame: CGRect(origin: CGPoint(x: 0.0, y: contentWithBackgroundOffset - UIScreenPixel), size: CGSize(width: width, height: UIScreenPixel)))
         transition.updateFrame(node: self.bottomSeparatorNode, frame: CGRect(origin: CGPoint(x: 0.0, y: contentWithBackgroundHeight), size: CGSize(width: width, height: UIScreenPixel)))
         
