@@ -333,16 +333,8 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                 self.updateConceptBackdrop(transition: .immediate)
             }
         }
-        let peer = self.data?.savedMessagesPeer ?? self.data?.peer
-        let hasProfilePhoto = peer?.profileImageRepresentations.isEmpty == false
-        let image: UIImage?
-        if let currentImage = avatar.listContainerNode.currentItemNode?.imageNode.image {
-            image = currentImage
-        } else if !hasProfilePhoto {
-            image = avatar.avatarContainerNode.avatarNode.unroundedImage
-        } else {
-            image = nil
-        }
+        let image = avatar.listContainerNode.currentItemNode?.imageNode.image
+            ?? avatar.avatarContainerNode.avatarNode.unroundedImage
         let avatarFrame: CGRect
         if self.headerNode.isAvatarExpanded {
             avatarFrame = avatar.listContainerNode.view.convert(avatar.listContainerNode.view.bounds, to: self.view)
@@ -1500,13 +1492,6 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
         self.scrollNode.view.scrollsToTop = false
         self.scrollNode.view.delegate = self.wrappedScrollViewDelegate
         self.view.addSubview(self.conceptBackdrop)
-        self.conceptBackdrop.onColorUpdated = { [weak self] in
-            guard let self, let (layout, navigationHeight) = self.validLayout else { return }
-            self.conceptSurfaceThemes.removeAll()
-            self.conceptAppliedPaletteKey = nil
-            self.headerNode.conceptDominantColor = self.conceptBackdrop.dominantColor
-            self.containerLayoutUpdated(layout: layout, navigationHeight: navigationHeight, transition: .animated(duration: 0.35, curve: .easeInOut))
-        }
         self.conceptAccessibilityObserver = NotificationCenter.default.addObserver(forName: UIAccessibility.reduceTransparencyStatusDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
             guard let self, let (layout, navigationHeight) = self.validLayout else { return }
             self.containerLayoutUpdated(layout: layout, navigationHeight: navigationHeight, transition: .immediate)
@@ -5921,7 +5906,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                     wasAdded = true
                 }
                 
-                if wasAdded && transition.isAnimated && (self.isSettings || self.isMyProfile) && !self.state.isEditing {
+                if wasAdded && transition.isAnimated && (self.isSettings || self.isMyProfile) && !self.state.isEditing && !self.conceptGlassEnabled {
                     sectionNode.alpha = 0.0
                     transition.updateAlpha(node: sectionNode, alpha: self.underHeaderContentsAlpha, delay: 0.1)
                 }
@@ -5933,6 +5918,9 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                     }
                 }
                 let sectionHeight = sectionNode.update(context: self.context, width: sectionWidth, safeInsets: UIEdgeInsets(), hasCorners: !insets.left.isZero, presentationData: self.conceptSurfaceData(decorative: true), items: sectionItems, glass: self.conceptGlassEnabled, transition: transition)
+                if self.conceptGlassEnabled {
+                    sectionNode.updateBackdrop(tintColor: conceptProfileCardTintColor(dominantColor: nil, isDark: self.presentationData.theme.overallDarkAppearance), targetColor: self.presentationData.theme.list.itemBlocksBackgroundColor, fraction: self.conceptDecorativeSurface ? self.headerNode.conceptThemeFraction : 1.0, isDark: self.presentationData.theme.overallDarkAppearance, transition: transition)
+                }
                 let sectionFrame = CGRect(origin: CGPoint(x: insets.left, y: contentHeight), size: CGSize(width: sectionWidth, height: sectionHeight))
                 if additive {
                     transition.updateFrameAdditive(node: sectionNode, frame: sectionFrame)
@@ -5940,7 +5928,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                     transition.updateFrame(node: sectionNode, frame: sectionFrame)
                 }
                 
-                if wasAdded && transition.isAnimated && (self.isSettings || self.isMyProfile) && !self.state.isEditing {
+                if wasAdded && transition.isAnimated && (self.isSettings || self.isMyProfile) && !self.state.isEditing && !self.conceptGlassEnabled {
                 } else {
                     transition.updateAlpha(node: sectionNode, alpha: self.state.isEditing ? 0.0 : self.underHeaderContentsAlpha)
                 }
@@ -6310,10 +6298,8 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                     self.conceptAppliedPaletteKey = self.conceptPaletteKey
                     for section in self.regularSections.values { section.updateAppearance(presentationData: palette) }
                 }
-                // Smooth dual-layer transition: blur + adaptive tint linearly fade out
-                // while solid theme background linearly fades in, with zero brightness spikes.
                 for section in self.regularSections.values {
-                    section.updateBackdrop(tintColor: tintColor, targetColor: self.presentationData.theme.list.itemBlocksBackgroundColor, fraction: fraction, isDark: isDark)
+                    section.updateBackdrop(tintColor: tintColor, targetColor: self.presentationData.theme.list.itemBlocksBackgroundColor, fraction: fraction, isDark: isDark, transition: transition)
                 }
                 let tabsTint = isDark ? UIColor(white: 1.0, alpha: 0.08) : UIColor(white: 1.0, alpha: 0.16)
                 self.paneContainerNode.profileSurfaceColor = tabsTint

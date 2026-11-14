@@ -14,6 +14,25 @@ final class ConceptProfileBackdropView: UIView {
     private let cover = ComponentView<Empty>()
     private let photoContainer = UIView()
     private let photo = UIImageView()
+    private let shade = UIView()
+    private final class PreparedPhoto: NSObject {
+        weak var source: UIImage?
+        let image: UIImage
+        let color: UIColor
+        let luminance: CGFloat
+        init(source: UIImage, image: UIImage, color: UIColor, luminance: CGFloat) {
+            self.source = source
+            self.image = image
+            self.color = color
+            self.luminance = luminance
+        }
+    }
+    private static let photoCache: NSCache<NSString, PreparedPhoto> = {
+        let cache = NSCache<NSString, PreparedPhoto>()
+        cache.countLimit = 12
+        cache.totalCostLimit = 4 * 1024 * 1024
+        return cache
+    }()
     private static let photoQueue = DispatchQueue(label: "Concept.ProfilePhoto", qos: .userInitiated)
     private static let imageContext = CIContext(options: [.cacheIntermediates: false])
     private let tone = CAGradientLayer()
@@ -30,7 +49,6 @@ final class ConceptProfileBackdropView: UIView {
     public private(set) var dominantColor: UIColor?
     public private(set) var photoColor: UIColor?
     public private(set) var coverColor: UIColor?
-    var onColorUpdated: (() -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -46,6 +64,9 @@ final class ConceptProfileBackdropView: UIView {
         // The sharp photo owns the only photo-to-blur mask.
         self.addSubview(self.photoContainer)
         self.layer.addSublayer(self.tone)
+        self.shade.backgroundColor = .black
+        self.shade.alpha = 0.0
+        self.addSubview(self.shade)
         self.addSubview(self.themeFade)
     }
 
@@ -98,12 +119,14 @@ final class ConceptProfileBackdropView: UIView {
         }
         self.dominantColor = expanded || !self.hasCover ? self.photoColor : (self.coverColor ?? self.photoColor)
         if enabled, self.sourcePhoto !== image { self.preparePhoto(image) }
-        self.updateTone()
+        self.updateTone(animated: transition.isAnimated)
 
         let bounds = CGRect(origin: CGPoint(), size: size)
         transition.updateFrame(view: self.photoContainer, frame: bounds)
         transition.updateFrame(view: self.photo, frame: bounds)
+        transition.updateFrame(view: self.shade, frame: bounds)
         transition.updateFrame(view: self.themeFade, frame: bounds)
+        transition.updateAlpha(layer: self.shade.layer, alpha: visible && (expanded || self.hasCover) ? 0.035 : 0.0)
         // The sharp gallery fades into the cached, strongly blurred color field.
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -132,20 +155,30 @@ final class ConceptProfileBackdropView: UIView {
         return 0.35
     }
 
-    private func updateTone() {
+    private func updateTone(animated: Bool = false) {
         let luminance = self.expanded ? self.photoLuminance : self.coverLuminance
         let strength = max(0.0, min(1.0, (luminance - 0.12) / 0.65))
         let visible = self.expanded || self.hasCover
         if self.toneConfiguration?.0 == luminance && self.toneConfiguration?.1 == visible { return }
         self.toneConfiguration = (luminance, visible)
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        self.tone.colors = [
+        let previousColors = self.tone.presentation()?.colors ?? self.tone.colors
+        let colors = [
             UIColor.black.withAlphaComponent(visible ? 0.08 + strength * 0.16 : 0.0).cgColor,
             UIColor.black.withAlphaComponent(visible ? 0.12 + strength * 0.22 : 0.0).cgColor,
             UIColor.black.withAlphaComponent(visible ? 0.16 + strength * 0.24 : 0.0).cgColor
         ]
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        self.tone.colors = colors
         CATransaction.commit()
+        if animated, let previousColors {
+            let animation = CABasicAnimation(keyPath: "colors")
+            animation.fromValue = previousColors
+            animation.toValue = colors
+            animation.duration = 0.22
+            animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            self.tone.add(animation, forKey: "Concept.tone")
+        }
     }
 
     private func preparePhoto(_ image: UIImage?) {
@@ -155,14 +188,21 @@ final class ConceptProfileBackdropView: UIView {
         self.photoGeneration &+= 1
         let generation = self.photoGeneration
         self.sourcePhoto = image
+        let cacheKey = String(describing: ObjectIdentifier(image)) as NSString
+        if let cached = Self.photoCache.object(forKey: cacheKey), cached.source === image {
+            self.applyPhoto(cached, animated: self.photo.image != nil && self.window != nil)
+            return
+        }
+        if self.photo.image == nil {
+            self.photoContainer.backgroundColor = Self.placeholderColor(image) ?? self.coverColor ?? UIColor(white: 0.25, alpha: 1.0)
+        }
         Self.photoQueue.async { [weak self] in
             autoreleasepool {
                 guard let input = CIImage(image: image), input.extent.width.isFinite, input.extent.height.isFinite, input.extent.width > 0, input.extent.height > 0 else { return }
-                // High-resolution target for color fields to prevent visible pixelation.
-                let targetDimension: CGFloat = 640.0
+                let targetDimension: CGFloat = 256.0
                 let scale = min(1.0, targetDimension / max(input.extent.width, input.extent.height))
                 let small = input.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-                let blurred = small.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 50.0]).cropped(to: small.extent)
+                let blurred = small.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 28.0]).cropped(to: small.extent)
                 guard let result = Self.imageContext.createCGImage(blurred, from: small.extent) else { return }
                 var rgba = [UInt8](repeating: 0, count: 4)
                 let average = small.applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: CIVector(cgRect: small.extent)])
@@ -172,21 +212,45 @@ final class ConceptProfileBackdropView: UIView {
                 let photoColor = UIColor(red: CGFloat(rgba[0]) / 255.0, green: CGFloat(rgba[1]) / 255.0, blue: CGFloat(rgba[2]) / 255.0, alpha: 1.0)
                 let luminance = Self.luminance(photoColor)
                 let output = UIImage(cgImage: result)
+                let prepared = PreparedPhoto(source: image, image: output, color: photoColor, luminance: luminance)
                 DispatchQueue.main.async { [weak self] in
+                    Self.photoCache.setObject(prepared, forKey: cacheKey, cost: result.width * result.height * 4)
                     guard let self, self.photoGeneration == generation, self.sourcePhoto === image else { return }
-                    let fade = CATransition()
-                    fade.type = .fade
-                    fade.duration = 0.18
-                    self.photo.layer.add(fade, forKey: "Concept.photoChange")
-                    self.photo.image = output
-                    self.photoColor = photoColor
-                    self.photoLuminance = luminance
-                    self.dominantColor = self.expanded || !self.hasCover ? photoColor : (self.coverColor ?? photoColor)
-                    self.updateTone()
-                    self.onColorUpdated?()
+                    self.applyPhoto(prepared, animated: self.window != nil)
                 }
             }
         }
+    }
+
+    private func applyPhoto(_ prepared: PreparedPhoto, animated: Bool) {
+        if self.photo.image == nil {
+            self.photo.alpha = animated ? 0.0 : 1.0
+        } else if animated {
+            let fade = CATransition()
+            fade.type = .fade
+            fade.duration = 0.22
+            self.photo.layer.add(fade, forKey: "Concept.photoChange")
+        }
+        self.photo.image = prepared.image
+        let transition: ContainedViewLayoutTransition = animated ? .animated(duration: 0.22, curve: .easeInOut) : .immediate
+        transition.updateAlpha(layer: self.photo.layer, alpha: 1.0)
+        self.photoColor = prepared.color
+        self.photoLuminance = prepared.luminance
+        self.dominantColor = self.expanded || !self.hasCover ? prepared.color : (self.coverColor ?? prepared.color)
+        self.updateTone(animated: animated)
+    }
+
+    private static func placeholderColor(_ image: UIImage) -> UIColor? {
+        guard let source = image.cgImage, source.width <= 512, source.height <= 512 else { return nil }
+        var rgba = [UInt8](repeating: 0, count: 4)
+        let drawn = rgba.withUnsafeMutableBytes { bytes -> Bool in
+            guard let context = CGContext(data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            context.interpolationQuality = .low
+            context.draw(source, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return true
+        }
+        guard drawn else { return nil }
+        return UIColor(red: CGFloat(rgba[0]) / 255.0, green: CGFloat(rgba[1]) / 255.0, blue: CGFloat(rgba[2]) / 255.0, alpha: 1.0)
     }
 
     func updateScroll(themeFraction: CGFloat) {
@@ -195,23 +259,10 @@ final class ConceptProfileBackdropView: UIView {
 
 }
 
-public func conceptProfileCardTintColor(dominantColor: UIColor?, isDark: Bool) -> UIColor {
-    guard let dominantColor else {
-        return isDark ? UIColor(white: 1.0, alpha: 0.06) : UIColor(white: 1.0, alpha: 0.18)
-    }
-    var h: CGFloat = 0.0, s: CGFloat = 0.0, b: CGFloat = 0.0, a: CGFloat = 0.0
-    if dominantColor.getHue(&h, saturation: &s, brightness: &b, alpha: &a) {
-        if isDark {
-            let sat = min(s * 1.15, 0.70)
-            let bright = max(0.30, min(b, 0.80))
-            return UIColor(hue: h, saturation: sat, brightness: bright, alpha: 0.22)
-        } else {
-            let sat = min(s * 0.75, 0.45)
-            let bright = max(b, 0.92)
-            return UIColor(hue: h, saturation: sat, brightness: bright, alpha: 0.26)
-        }
-    }
-    return isDark ? UIColor(white: 1.0, alpha: 0.06) : UIColor(white: 1.0, alpha: 0.18)
+public func conceptProfileCardTintColor(dominantColor _: UIColor?, isDark _: Bool) -> UIColor {
+    // The backdrop already supplies its color through the blur. A neutral tint avoids
+    // recoloring every card when the larger avatar finishes decoding.
+    return UIColor(white: 0.0, alpha: 0.04)
 }
 
 /// Only the profile's own surfaces use this palette. Menus, editing forms,

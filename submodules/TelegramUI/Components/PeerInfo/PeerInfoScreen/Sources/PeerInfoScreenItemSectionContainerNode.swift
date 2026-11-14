@@ -9,14 +9,13 @@ final class PeerInfoScreenItemSectionContainerNode: ASDisplayNode {
     private let backgroundNode: ASDisplayNode
     private let cardNode = ASDisplayNode()
     private let material = ConceptProfileMaterialView()
+    private var hasBackdropAppearance = false
     private var lastLayout: (AccountContext, CGFloat, UIEdgeInsets, Bool, [PeerInfoScreenItem], Bool)?
 
-    func updateBackdrop(tintColor: UIColor, targetColor: UIColor, fraction: CGFloat, isDark: Bool) {
-        self.material.updateAppearance(tintColor: tintColor, targetColor: targetColor, fraction: fraction, isDark: isDark)
-    }
-
-    func updateBackdrop(color: UIColor, isDark: Bool) {
-        self.material.updateAppearance(color: color, isDark: isDark)
+    func updateBackdrop(tintColor: UIColor, targetColor: UIColor, fraction: CGFloat, isDark: Bool, transition: ContainedViewLayoutTransition) {
+        let transition: ContainedViewLayoutTransition = self.hasBackdropAppearance ? transition : .immediate
+        self.hasBackdropAppearance = true
+        self.material.updateAppearance(tintColor: tintColor, targetColor: targetColor, fraction: fraction, isDark: isDark, transition: transition)
     }
 
     func updateAppearance(presentationData: PresentationData) {
@@ -159,7 +158,10 @@ final class PeerInfoScreenItemSectionContainerNode: ASDisplayNode {
         // and children share the same transition; no independently timed mask.
         transition.updateFrame(node: self.cardNode, frame: self.backgroundNode.frame)
         transition.updateFrame(view: self.material, frame: CGRect(origin: .zero, size: self.backgroundNode.frame.size))
-        self.material.update(size: self.backgroundNode.frame.size, radius: 24.0, color: presentationData.theme.list.itemModalBlocksBackgroundColor, isDark: presentationData.theme.overallDarkAppearance, transition: transition)
+        self.material.updateLayout(size: self.backgroundNode.frame.size, radius: 24.0, transition: transition)
+        if !self.hasBackdropAppearance {
+            self.material.updateAppearance(color: presentationData.theme.list.itemModalBlocksBackgroundColor, isDark: presentationData.theme.overallDarkAppearance)
+        }
         self.cardNode.view.sendSubviewToBack(self.material)
         transition.updateFrame(node: self.topSeparatorNode, frame: CGRect(origin: CGPoint(x: 0.0, y: contentWithBackgroundOffset - UIScreenPixel), size: CGSize(width: width, height: UIScreenPixel)))
         transition.updateFrame(node: self.bottomSeparatorNode, frame: CGRect(origin: CGPoint(x: 0.0, y: contentWithBackgroundHeight), size: CGSize(width: width, height: UIScreenPixel)))

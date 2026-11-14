@@ -5,11 +5,18 @@ import ComponentFlow
 /// Regular content material, distinct from the refractive glass used by controls.
 /// The effect itself always has alpha 1; clipping belongs to its container.
 final class ConceptProfileMaterialView: UIView {
-    private let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+    private struct Appearance: Equatable {
+        let tintColor: UIColor
+        let targetColor: UIColor
+        let fraction: CGFloat
+        let isDark: Bool
+        let reduceTransparency: Bool
+    }
+    private let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterialDark))
     private let tint = UIView()
     private let solidBackground = UIView()
     let contentView = UIView()
-    private var dark: Bool?
+    private var appearance: Appearance?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -25,36 +32,41 @@ final class ConceptProfileMaterialView: UIView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func updateAppearance(tintColor: UIColor, targetColor: UIColor = .clear, fraction: CGFloat = 0.0, isDark: Bool) {
-        if self.dark != isDark {
-            self.dark = isDark
-            self.blur.overrideUserInterfaceStyle = isDark ? .dark : .light
-        }
-        self.blur.isHidden = UIAccessibility.isReduceTransparencyEnabled
-        if UIAccessibility.isReduceTransparencyEnabled {
-            self.tint.backgroundColor = UIColor.secondarySystemBackground.resolvedColor(with: UITraitCollection(userInterfaceStyle: isDark ? .dark : .light))
-            self.solidBackground.alpha = 0.0
-            self.blur.alpha = 0.0
+    func updateAppearance(tintColor: UIColor, targetColor: UIColor = .clear, fraction: CGFloat = 0.0, isDark: Bool, transition: ContainedViewLayoutTransition = .immediate) {
+        let appearance = Appearance(tintColor: tintColor, targetColor: targetColor, fraction: max(0.0, min(1.0, fraction)), isDark: isDark, reduceTransparency: UIAccessibility.isReduceTransparencyEnabled)
+        guard appearance != self.appearance else { return }
+        let transition: ContainedViewLayoutTransition = self.appearance == nil ? .immediate : transition
+        self.appearance = appearance
+        self.blur.isHidden = appearance.reduceTransparency
+        if appearance.reduceTransparency {
+            let fallback = UIColor.secondarySystemBackground.resolvedColor(with: UITraitCollection(userInterfaceStyle: isDark ? .dark : .light))
+            transition.updateBackgroundColor(layer: self.tint.layer, color: fallback)
+            transition.updateAlpha(layer: self.solidBackground.layer, alpha: 0.0)
         } else {
-            self.tint.backgroundColor = tintColor
-            self.solidBackground.backgroundColor = targetColor
-            self.solidBackground.alpha = fraction
-            self.blur.alpha = max(0.0, min(1.0, 1.0 - fraction))
+            transition.updateBackgroundColor(layer: self.tint.layer, color: tintColor)
+            transition.updateBackgroundColor(layer: self.solidBackground.layer, color: targetColor)
+            // Cover the stable dark material with the actual application theme when collapsing.
+            // Fading the effect itself or swapping its appearance produces brightness flashes.
+            transition.updateAlpha(layer: self.solidBackground.layer, alpha: appearance.fraction)
         }
     }
 
-    func updateAppearance(color: UIColor, isDark: Bool) {
-        self.updateAppearance(tintColor: color, targetColor: .clear, fraction: 0.0, isDark: isDark)
+    func updateAppearance(color: UIColor, isDark: Bool, transition: ContainedViewLayoutTransition = .immediate) {
+        self.updateAppearance(tintColor: color, targetColor: .clear, fraction: 0.0, isDark: isDark, transition: transition)
     }
 
-    func update(size: CGSize, radius: CGFloat, tintColor: UIColor, targetColor: UIColor = .clear, fraction: CGFloat = 0.0, isDark: Bool, transition: ContainedViewLayoutTransition) {
-        self.updateAppearance(tintColor: tintColor, targetColor: targetColor, fraction: fraction, isDark: isDark)
+    func updateLayout(size: CGSize, radius: CGFloat, transition: ContainedViewLayoutTransition) {
         self.layer.cornerRadius = radius
         let bounds = CGRect(origin: .zero, size: size)
         transition.updateFrame(view: self.blur, frame: bounds)
         transition.updateFrame(view: self.tint, frame: bounds)
         transition.updateFrame(view: self.solidBackground, frame: bounds)
         transition.updateFrame(view: self.contentView, frame: bounds)
+    }
+
+    func update(size: CGSize, radius: CGFloat, tintColor: UIColor, targetColor: UIColor = .clear, fraction: CGFloat = 0.0, isDark: Bool, transition: ContainedViewLayoutTransition) {
+        self.updateAppearance(tintColor: tintColor, targetColor: targetColor, fraction: fraction, isDark: isDark, transition: transition)
+        self.updateLayout(size: size, radius: radius, transition: transition)
     }
 
     func update(size: CGSize, radius: CGFloat, color: UIColor, isDark: Bool, transition: ContainedViewLayoutTransition) {

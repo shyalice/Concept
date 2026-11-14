@@ -30,3 +30,21 @@ Per AGENTS.md, before claiming the animation visually verified, record and inspe
 The current Codex session has no XcodeBuildMCP interaction tools or booted authenticated simulator.
 Source checks and a release build do not establish that these frame checks passed. A signed device
 recording is still needed to judge the new physical interaction and actual frame pacing.
+
+## First-frame material and avatar readiness
+
+Information cards keep one explicit dark ultra-thin material from creation. Geometry updates do not
+reset its backdrop state. A separate opaque theme fill handles collapse; the blur's alpha stays one.
+Profile section entry avoids fading the material's ancestor. This follows [UIKit's effect alpha
+requirements](https://developer.apple.com/documentation/uikit/uivisualeffectview). The neutral 4% black
+card tint no longer waits for the photo's average color, so photo completion does not rebuild rows.
+
+The backdrop starts with the decoded round avatar while a gallery photo is unavailable. Blur is
+prepared off-main at a 256-pixel maximum edge and cached with a 4 MiB/12-entry limit, without retaining
+the source photos. A bounded thumbnail color provides the initial fill; arriving images and tone
+changes crossfade over 0.22 seconds. A separate 3.5% black shade gently dims the decorative backdrop.
+
+Before visual acceptance, record cold/warm profile opens, delayed gallery-image loading, avatar
+expansion, gift covers and scroll-to-theme in both themes. Expect no pale first card, abrupt material
+switch, late full-screen photo pop or row relayout on image completion. Cached opens should reuse
+the prepared blur; unavailable images should retain a stable placeholder until a smooth handoff.
