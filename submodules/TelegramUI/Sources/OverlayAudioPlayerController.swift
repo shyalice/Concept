@@ -166,7 +166,7 @@ final class OverlayAudioPlayerControllerImpl: ViewController, OverlayAudioPlayer
                         }
                         dismissImpl?()
                         let presentationData = self.context.sharedContext.currentPresentationData.with { $0 }
-                        let controller = legacyICloudFilePicker(theme: presentationData.theme, mode: .default, documentTypes: ["public.mp3", "public.mpeg-4-audio", "public.aac-audio", "org.xiph.flac"], completion: { [weak self] urls in
+                        let controller = legacyICloudFilePicker(theme: presentationData.theme, mode: .import, documentTypes: ["public.mp3", "public.mpeg-4-audio", "public.aac-audio", "org.xiph.flac"], completion: { [weak self] urls in
                             guard let self, let url = urls.first else {
                                 return
                             }

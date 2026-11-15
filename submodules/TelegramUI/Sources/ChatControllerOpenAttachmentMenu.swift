@@ -1424,7 +1424,7 @@ extension ChatControllerImpl {
             let (accountPeer, limits, premiumLimits) = result
             let isPremium = accountPeer?.isPremium ?? false
 
-            strongSelf.present(legacyICloudFilePicker(theme: strongSelf.presentationData.theme, hasMultiselection: !editingMessage, documentTypes: documentTypes, completion: { [weak self] urls in
+            strongSelf.present(legacyICloudFilePicker(theme: strongSelf.presentationData.theme, mode: .import, hasMultiselection: !editingMessage, documentTypes: documentTypes, completion: { [weak self] urls in
                 if let strongSelf = self, !urls.isEmpty {
                     var signals: [Signal<ICloudFileDescription?, NoError>] = []
                     for url in urls {
@@ -1433,6 +1433,10 @@ extension ChatControllerImpl {
                     strongSelf.enqueueMediaMessageDisposable.set((combineLatest(signals)
                     |> deliverOnMainQueue).startStrict(next: { results in
                         if let strongSelf = self {
+                            guard results.allSatisfy({ $0 != nil }) else {
+                                strongSelf.present(textAlertController(context: strongSelf.context, title: nil, text: strongSelf.presentationData.strings.Login_UnknownError, actions: [TextAlertAction(type: .defaultAction, title: strongSelf.presentationData.strings.Common_OK, action: {})]), in: .window(.root))
+                                return
+                            }
                             let replyMessageSubject = strongSelf.presentationInterfaceState.interfaceState.replyMessageSubject
 
                             for item in results {

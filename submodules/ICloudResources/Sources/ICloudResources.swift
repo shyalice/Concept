@@ -188,61 +188,30 @@ private func descriptionWithUrl(_ url: URL) -> ICloudFileDescription? {
     }
 }
 
+private let iCloudDescriptionQueue: OperationQueue = {
+    let queue = OperationQueue()
+    queue.name = "Concept.FileDescription"
+    queue.qualityOfService = .userInitiated
+    queue.maxConcurrentOperationCount = 2
+    return queue
+}()
+
 public func iCloudFileDescription(_ url: URL) -> Signal<ICloudFileDescription?, NoError> {
     return Signal { subscriber in
-        var isRemote = false
-        var isCurrent = true
-        
-        if let values = try? url.resourceValues(forKeys: Set([URLResourceKey.ubiquitousItemDownloadingStatusKey])), let status = values.ubiquitousItemDownloadingStatus {
-            isRemote = true
-            if status != URLUbiquitousItemDownloadingStatus.current {
-                isCurrent = false
-            }
-        }
-        
-        if !isRemote || isCurrent {
-            subscriber.putNext(descriptionWithUrl(url))
+        guard let access = ICloudFileAccess(url: url) else {
+            subscriber.putNext(nil)
             subscriber.putCompletion()
             return EmptyDisposable
-        } else {
-            final class WrappedQuery {
-                let query = NSMetadataQuery()
-            }
-            
-            let query = WrappedQuery()
-            query.query.searchScopes = [NSMetadataQueryUbiquitousDocumentsScope, NSMetadataQueryAccessibleUbiquitousExternalDocumentsScope]
-            query.query.predicate = NSPredicate(format: "%K.lastPathComponent == %@", NSMetadataItemFSNameKey, url.lastPathComponent)
-            query.query.valueListAttributes = [NSMetadataItemFSSizeKey]
-            
-            let observer = NotificationCenter.default.addObserver(forName: NSNotification.Name.NSMetadataQueryDidFinishGathering, object: query, queue: OperationQueue.main, using: { notification in
-                query.query.disableUpdates()
-                
-                guard let metadataItem = query.query.results.first as? NSMetadataItem else {
-                    query.query.enableUpdates()
-                    return
-                }
-                
-                query.query.stop()
-                
-                guard let fileSize = metadataItem.value(forAttribute: NSMetadataItemFSSizeKey) as? NSNumber, fileSize != 0 else {
-                    subscriber.putNext(nil)
-                    subscriber.putCompletion()
-                    return
-                }
-                
-                subscriber.putNext(descriptionWithUrl(url))
+        }
+        let coordinator = NSFileCoordinator(filePresenter: nil)
+        let intent = NSFileAccessIntent.readingIntent(with: url, options: .withoutChanges)
+        coordinator.coordinate(with: [intent], queue: iCloudDescriptionQueue) { error in
+            withExtendedLifetime(access) {
+                subscriber.putNext(error == nil ? descriptionWithUrl(intent.url) : nil)
                 subscriber.putCompletion()
-            })
-            
-            query.query.start()
-            
-            return ActionDisposable {
-                Queue.mainQueue().async {
-                    query.query.stop()
-                    NotificationCenter.default.removeObserver(observer)
-                }
             }
         }
+        return ActionDisposable { coordinator.cancel() }
     }
 }
 
