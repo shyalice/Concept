@@ -1470,7 +1470,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             !peer.isFake && !peer.isScam ? peer.id.conceptBadgeKey : nil
         }
         let conceptBadgeWidth = self.conceptBadgeView.update(peerId: conceptPeerKey, color: navigationContentsAccentColor, height: 26)
-        let conceptBadgeBaselineOffset: CGFloat = conceptPeerKey.flatMap { ConceptBadgeService.shared.badge(peerId: $0) }.map { !$0.hasRosette && $0.glyph == .butterfly ? 2.5 : 0.0 } ?? 0.0
+        let conceptBadgeBaselineOffset: CGFloat = conceptPeerKey.flatMap { ConceptBadgeService.shared.badge(peerId: $0) }.map { !$0.hasRosette && $0.glyph == .butterfly ? 2.5 - UIScreenPixel : 0.0 } ?? 0.0
         _ = self.expandedConceptBadgeView.update(peerId: conceptPeerKey, color: navigationContentsAccentColor, height: 26)
         if self.conceptBadgeView.superview == nil { self.titleNode.stateNode(forKey: TitleNodeStateRegular)?.view.addSubview(self.conceptBadgeView) }
         if self.expandedConceptBadgeView.superview == nil { self.titleNode.stateNode(forKey: TitleNodeStateExpanded)?.view.addSubview(self.expandedConceptBadgeView) }

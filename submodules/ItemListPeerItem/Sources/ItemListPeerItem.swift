@@ -1,4 +1,5 @@
 import Foundation
+import ConceptBadges
 import UIKit
 import Display
 import AsyncDisplayKit
@@ -759,6 +760,7 @@ public class ItemListPeerItemNode: ItemListRevealOptionsItemNode, ItemListItemNo
     private let labelBadgeNode: ASImageNode
     private var labelArrowNode: ASImageNode?
     private let statusNode: TextNode
+    private let conceptBadgeView = ConceptBadgeView()
     private var credibilityIconComponent: EmojiStatusComponent?
     private var credibilityIconView: ComponentHostView<Empty>?
     private var verifiedIconComponent: EmojiStatusComponent?
@@ -891,6 +893,12 @@ public class ItemListPeerItemNode: ItemListRevealOptionsItemNode, ItemListItemNo
         self.containerNode.addSubnode(self.statusNode)
         self.containerNode.addSubnode(self.labelNode.textNode)
         
+        self.conceptBadgeView.changed = { [weak self] in
+            guard let self, let params = self.layoutParams else { return }
+            let (_, apply) = self.asyncLayout()(params.0, params.1, params.2, params.3)
+            apply(false, true)
+        }
+
         self.peerPresenceManager = PeerPresenceStatusManager(update: { [weak self] in
             if let strongSelf = self, let layoutParams = strongSelf.layoutParams {
                 let (_, apply) = strongSelf.asyncLayout()(layoutParams.0, layoutParams.1, layoutParams.2, layoutParams.3)
@@ -980,6 +988,14 @@ public class ItemListPeerItemNode: ItemListRevealOptionsItemNode, ItemListItemNo
                 }
             }
             
+            var conceptPeerKey: String?
+            if !item.peer.isFake && !item.peer.isScam && item.threadInfo == nil {
+                if case .threatSelfAsSaved = item.aliasHandling, item.peer.id == item.context.accountPeerId {
+                } else {
+                    conceptPeerKey = item.peer.id.conceptBadgeKey
+                }
+            }
+            let conceptHasBadge = conceptPeerKey.flatMap { ConceptBadgeService.shared.badge(peerId: $0) } != nil
             var titleIconsWidth: CGFloat = 0.0
             if let verifiedIcon = verifiedIcon {
                 titleIconsWidth += 4.0
@@ -1000,10 +1016,12 @@ public class ItemListPeerItemNode: ItemListRevealOptionsItemNode, ItemListItemNo
                     let stringRect = textString.boundingRect(with: CGSize(width: 100.0, height: 16.0), options: .usesLineFragmentOrigin, context: nil)
                     titleIconsWidth += floor(stringRect.width) + 11.0
                 default:
-                    titleIconsWidth += 16.0
+                    titleIconsWidth += 20.0
                 }
             }
             
+            if conceptHasBadge { titleIconsWidth += 20.0 }
+
             var badgeColor: UIColor?
             if case .badge = item.label {
                 badgeColor = item.presentationData.theme.list.itemAccentColor
@@ -1286,7 +1304,7 @@ public class ItemListPeerItemNode: ItemListRevealOptionsItemNode, ItemListItemNo
             
             let (labelLayout, labelApply) = makeLabelLayout(TextNodeLayoutArguments(attributedString: labelAttributedString, backgroundColor: nil, maximumNumberOfLines: labelMaximumNumberOfLines, truncationType: .end, constrainedSize: CGSize(width: params.width - leftInset - 16.0 - editingOffset - rightInset, height: CGFloat.greatestFiniteMagnitude), alignment: labelAlignment, lineSpacing: labelLineSpacing, cutout: nil, insets: UIEdgeInsets()))
             
-            let constrainedTitleSize = CGSize(width: params.width - leftInset - 12.0 - editingOffset - rightInset - labelLayout.size.width - labelInset - titleIconsWidth, height: CGFloat.greatestFiniteMagnitude)
+            let constrainedTitleSize = CGSize(width: max(1.0, params.width - leftInset - 12.0 - editingOffset - rightInset - labelLayout.size.width - labelInset - titleIconsWidth), height: CGFloat.greatestFiniteMagnitude)
             let (titleLayout, titleApply) = makeTitleLayout(TextNodeLayoutArguments(attributedString: titleAttributedString, backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: constrainedTitleSize, alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
             
             let constrainedStatusSize = CGSize(width: params.width - leftInset - 8.0 - editingOffset - rightInset - labelLayout.size.width - labelInset, height: CGFloat.greatestFiniteMagnitude)
@@ -1614,11 +1632,21 @@ public class ItemListPeerItemNode: ItemListRevealOptionsItemNode, ItemListItemNo
                         
                         nextIconX += 4.0
                         creditibilityIconTransition.updateFrame(view: credibilityIconView, frame: CGRect(origin: CGPoint(x: nextIconX, y: floorToScreenPixels(titleFrame.midY - iconSize.height / 2.0)), size: iconSize))
+                        nextIconX += iconSize.width
                     } else if let credibilityIconView = strongSelf.credibilityIconView {
                         strongSelf.credibilityIconView = nil
                         credibilityIconView.removeFromSuperview()
                     }
                     
+                    if strongSelf.conceptBadgeView.superview == nil {
+                        strongSelf.containerNode.view.addSubview(strongSelf.conceptBadgeView)
+                    }
+                    let conceptBadgeWidth = strongSelf.conceptBadgeView.update(peerId: conceptPeerKey, color: item.presentationData.theme.list.itemAccentColor, height: 16.0)
+                    if conceptBadgeWidth > 0.0 {
+                        nextIconX += 4.0
+                        transition.updateFrame(view: strongSelf.conceptBadgeView, frame: CGRect(x: nextIconX, y: floorToScreenPixels(titleFrame.midY - 8.0), width: conceptBadgeWidth, height: 16.0))
+                    }
+
                     if let currentSwitchNode = currentSwitchNode {
                         if currentSwitchNode !== strongSelf.switchNode {
                             strongSelf.switchNode = currentSwitchNode
@@ -2004,8 +2032,13 @@ public class ItemListPeerItemNode: ItemListRevealOptionsItemNode, ItemListItemNo
         transition.updateFrame(node: self.titleNode, frame: CGRect(origin: CGPoint(x: leftInset + revealOffset + editingOffset + titleLeftOffset, y: self.titleNode.frame.minY), size: self.titleNode.bounds.size))
         transition.updateFrame(node: self.statusNode, frame: CGRect(origin: CGPoint(x: leftInset + revealOffset + editingOffset, y: self.statusNode.frame.minY), size: self.statusNode.bounds.size))
         
+        var nextIconX = self.titleNode.frame.maxX
         if let credibilityIconView = self.credibilityIconView {
-            transition.updateFrame(view: credibilityIconView, frame: CGRect(origin: CGPoint(x: self.titleNode.frame.maxX + 4.0, y: credibilityIconView.frame.minY), size: credibilityIconView.bounds.size))
+            transition.updateFrame(view: credibilityIconView, frame: CGRect(origin: CGPoint(x: nextIconX + 4.0, y: credibilityIconView.frame.minY), size: credibilityIconView.bounds.size))
+            nextIconX += 4.0 + credibilityIconView.bounds.width
+        }
+        if !self.conceptBadgeView.isHidden {
+            transition.updateFrame(view: self.conceptBadgeView, frame: CGRect(x: nextIconX + 4.0, y: self.conceptBadgeView.frame.minY, width: self.conceptBadgeView.bounds.width, height: self.conceptBadgeView.bounds.height))
         }
         
         var rightLabelInset: CGFloat = 15.0 + params.rightInset

@@ -1,4 +1,5 @@
 import Foundation
+import ConceptBadges
 import UIKit
 import Display
 import AsyncDisplayKit
@@ -32,7 +33,7 @@ public final class AccountPeerContextItem: ContextMenuCustomItem {
 
 private final class AccountPeerContextItemNode: ASDisplayNode, ContextMenuCustomNode {
     private let item: AccountPeerContextItem
-    private let presentationData: PresentationData
+    private var presentationData: PresentationData
     private let getController: () -> ContextControllerProtocol?
     private let actionSelected: (ContextMenuActionResult) -> Void
     
@@ -40,6 +41,7 @@ private final class AccountPeerContextItemNode: ASDisplayNode, ContextMenuCustom
     private let textNode: ImmediateTextNode
     private let avatarNode: AvatarNode
     private let emojiStatusView: ComponentView<Empty>
+    private let conceptBadgeView = ConceptBadgeView()
     
     init(presentationData: PresentationData, item: AccountPeerContextItem, getController: @escaping () -> ContextControllerProtocol?, actionSelected: @escaping (ContextMenuActionResult) -> Void) {
         self.item = item
@@ -71,6 +73,10 @@ private final class AccountPeerContextItemNode: ASDisplayNode, ContextMenuCustom
         self.addSubnode(self.avatarNode)
         self.addSubnode(self.buttonNode)
         
+        self.conceptBadgeView.changed = { [weak self] in
+            self?.getController()?.requestLayout(transition: .immediate)
+        }
+
         self.buttonNode.addTarget(self, action: #selector(self.buttonPressed), forControlEvents: .touchUpInside)
     }
 
@@ -89,29 +95,31 @@ private final class AccountPeerContextItemNode: ASDisplayNode, ContextMenuCustom
         
         self.avatarNode.setPeer(context: self.item.context, account: self.item.account, theme: self.presentationData.theme, peer: self.item.peer)
         
-        if self.item.peer.emojiStatus != nil {
-            rightTextInset += 32.0
+        var iconContent: EmojiStatusComponent.Content?
+        if case let .user(user) = self.item.peer {
+            if let emojiStatus = user.emojiStatus {
+                iconContent = .animation(content: .customEmoji(fileId: emojiStatus.fileId), size: CGSize(width: 28.0, height: 28.0), placeholderColor: self.presentationData.theme.list.mediaPlaceholderColor, themeColor: self.presentationData.theme.list.itemAccentColor, loopMode: .forever)
+            } else if user.isPremium {
+                iconContent = .premium(color: self.presentationData.theme.list.itemAccentColor)
+            }
+        } else if case let .channel(channel) = self.item.peer {
+            if let emojiStatus = channel.emojiStatus {
+                iconContent = .animation(content: .customEmoji(fileId: emojiStatus.fileId), size: CGSize(width: 28.0, height: 28.0), placeholderColor: self.presentationData.theme.list.mediaPlaceholderColor, themeColor: self.presentationData.theme.list.itemAccentColor, loopMode: .forever)
+            }
         }
+        if iconContent != nil { rightTextInset += 32.0 }
+        let conceptPeerKey = !self.item.peer.isFake && !self.item.peer.isScam ? self.item.peer.id.conceptBadgeKey : nil
+        let conceptBadgeWidth = self.conceptBadgeView.update(peerId: conceptPeerKey, color: self.presentationData.theme.list.itemAccentColor, height: 16.0)
+        if conceptBadgeWidth > 0.0 { rightTextInset += conceptBadgeWidth + 4.0 }
     
-        let textSize = self.textNode.updateLayout(CGSize(width: constrainedWidth - sideInset - rightTextInset, height: .greatestFiniteMagnitude))
+        let textSize = self.textNode.updateLayout(CGSize(width: max(1.0, constrainedWidth - sideInset - rightTextInset), height: .greatestFiniteMagnitude))
         
         return (CGSize(width: textSize.width + sideInset + rightTextInset, height: verticalInset * 2.0 + textSize.height), { size, transition in
             let verticalOrigin = floor((size.height - textSize.height) / 2.0)
             let textFrame = CGRect(origin: CGPoint(x: iconSideInset + 40.0, y: verticalOrigin), size: textSize)
             transition.updateFrameAdditive(node: self.textNode, frame: textFrame)
             
-            var iconContent: EmojiStatusComponent.Content?
-            if case let .user(user) = self.item.peer {
-                if let emojiStatus = user.emojiStatus {
-                    iconContent = .animation(content: .customEmoji(fileId: emojiStatus.fileId), size: CGSize(width: 28.0, height: 28.0), placeholderColor: self.presentationData.theme.list.mediaPlaceholderColor, themeColor: self.presentationData.theme.list.itemAccentColor, loopMode: .forever)
-                } else if user.isPremium {
-                    iconContent = .premium(color: self.presentationData.theme.list.itemAccentColor)
-                }
-            } else if case let .channel(channel) = self.item.peer {
-                if let emojiStatus = channel.emojiStatus {
-                    iconContent = .animation(content: .customEmoji(fileId: emojiStatus.fileId), size: CGSize(width: 28.0, height: 28.0), placeholderColor: self.presentationData.theme.list.mediaPlaceholderColor, themeColor: self.presentationData.theme.list.itemAccentColor, loopMode: .forever)
-                }
-            }
+            var nextIconX = textFrame.maxX
             if let iconContent {
                 let emojiStatusSize = self.emojiStatusView.update(
                     transition: .immediate,
@@ -130,10 +138,18 @@ private final class AccountPeerContextItemNode: ASDisplayNode, ContextMenuCustom
                     if view.superview == nil {
                         self.view.addSubview(view)
                     }
-                    transition.updateFrame(view: view, frame: CGRect(origin: CGPoint(x: textFrame.maxX + 2.0, y: textFrame.minY + floor((textFrame.height - emojiStatusSize.height) / 2.0)), size: emojiStatusSize))
+                    let statusFrame = CGRect(origin: CGPoint(x: nextIconX + 2.0, y: textFrame.minY + floor((textFrame.height - emojiStatusSize.height) / 2.0)), size: emojiStatusSize)
+                    transition.updateFrame(view: view, frame: statusFrame)
+                    nextIconX = statusFrame.maxX
                 }
             }
             
+            if iconContent == nil { self.emojiStatusView.view?.removeFromSuperview() }
+            if self.conceptBadgeView.superview == nil { self.view.addSubview(self.conceptBadgeView) }
+            if conceptBadgeWidth > 0.0 {
+                transition.updateFrame(view: self.conceptBadgeView, frame: CGRect(x: nextIconX + 4.0, y: floorToScreenPixels(textFrame.midY - 8.0), width: conceptBadgeWidth, height: 16.0))
+            }
+
             transition.updateFrame(node: self.avatarNode, frame: CGRect(origin: CGPoint(x: iconSideInset + floor((standardIconWidth - iconSize.width) / 2.0), y: floor((size.height - iconSize.height) / 2.0)), size: iconSize))
             
             transition.updateFrame(node: self.buttonNode, frame: CGRect(origin: CGPoint(x: 0.0, y: 0.0), size: CGSize(width: size.width, height: size.height)))
@@ -141,6 +157,8 @@ private final class AccountPeerContextItemNode: ASDisplayNode, ContextMenuCustom
     }
     
     func updateTheme(presentationData: PresentationData) {
+        self.presentationData = presentationData
+        self.conceptBadgeView.tintColor = presentationData.theme.list.itemAccentColor
         if let attributedText = self.textNode.attributedText {
             let updatedAttributedText = NSMutableAttributedString(attributedString: attributedText)
             updatedAttributedText.addAttribute(.foregroundColor, value: presentationData.theme.contextMenu.primaryColor.cgColor, range: NSRange(location: 0, length: updatedAttributedText.length))
