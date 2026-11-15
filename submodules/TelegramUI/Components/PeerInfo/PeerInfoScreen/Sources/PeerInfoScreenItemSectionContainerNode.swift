@@ -10,7 +10,6 @@ final class PeerInfoScreenItemSectionContainerNode: ASDisplayNode {
     private let cardNode = ASDisplayNode()
     private let material = ConceptProfileMaterialView()
     private var hasBackdropAppearance = false
-    private var materialLayoutGeneration: UInt = 0
     private var lastLayout: (AccountContext, CGFloat, UIEdgeInsets, Bool, [PeerInfoScreenItem], Bool)?
 
     func updateBackdrop(tintColor: UIColor, targetColor: UIColor, fraction: CGFloat, isDark: Bool, transition: ContainedViewLayoutTransition) {
@@ -41,7 +40,7 @@ final class PeerInfoScreenItemSectionContainerNode: ASDisplayNode {
         self.bottomSeparatorNode.isLayerBacked = true
         
         self.itemContainerNode = ASDisplayNode()
-        self.itemContainerNode.clipsToBounds = true
+        self.itemContainerNode.clipsToBounds = false
         
         super.init()
         
@@ -51,7 +50,7 @@ final class PeerInfoScreenItemSectionContainerNode: ASDisplayNode {
         self.cardNode.layer.cornerCurve = .continuous
         self.cardNode.layer.cornerRadius = 24.0
         self.material.isUserInteractionEnabled = false
-        self.cardNode.view.addSubview(self.material)
+        self.itemContainerNode.view.addSubview(self.material)
         self.itemContainerNode.addSubnode(self.cardNode)
         self.addSubnode(self.topSeparatorNode)
         self.addSubnode(self.bottomSeparatorNode)
@@ -61,6 +60,7 @@ final class PeerInfoScreenItemSectionContainerNode: ASDisplayNode {
         let useGlass = glass && hasCorners && !UIAccessibility.isReduceTransparencyEnabled
         self.lastLayout = (context, width, safeInsets, hasCorners, items, glass)
         self.cardNode.isHidden = !useGlass
+        self.material.isHidden = !useGlass
         self.cardNode.backgroundColor = .clear
         self.cardNode.layer.borderWidth = 0.0
         self.cardNode.layer.borderColor = nil
@@ -155,23 +155,15 @@ final class PeerInfoScreenItemSectionContainerNode: ASDisplayNode {
         
         transition.updateFrame(node: self.itemContainerNode, frame: CGRect(origin: CGPoint(), size: CGSize(width: width, height: contentHeight)))
         transition.updateFrame(node: self.backgroundNode, frame: CGRect(origin: CGPoint(x: 0.0, y: contentWithBackgroundOffset), size: CGSize(width: width, height: max(0.0, contentWithBackgroundHeight - contentWithBackgroundOffset))))
-        // Animate the one outer clip, keeping the blur's sampling area large enough
-        // for both heights. Resizing a live backdrop during this animation flashes a band.
-        self.materialLayoutGeneration &+= 1
-        let generation = self.materialLayoutGeneration
+        // Native glass owns its shape. Its optical edge stays outside the clipped rows.
         let materialSize = self.backgroundNode.frame.size
-        let samplingSize = CGSize(width: materialSize.width, height: transition.isAnimated ? max(materialSize.height, self.material.bounds.height) : materialSize.height)
-        self.material.frame = CGRect(origin: .zero, size: samplingSize)
-        self.material.updateLayout(size: samplingSize, radius: 0.0, transition: .immediate)
-        transition.updateFrame(node: self.cardNode, frame: self.backgroundNode.frame, completion: { [weak self] _ in
-            guard let self, self.materialLayoutGeneration == generation else { return }
-            self.material.frame = CGRect(origin: .zero, size: materialSize)
-            self.material.updateLayout(size: materialSize, radius: 0.0, transition: .immediate)
-        })
+        transition.updateFrame(node: self.cardNode, frame: self.backgroundNode.frame)
+        transition.updateFrame(view: self.material, frame: self.backgroundNode.frame)
+        self.material.updateLayout(size: materialSize, radius: 24.0, transition: transition)
         if !self.hasBackdropAppearance {
             self.material.updateAppearance(color: presentationData.theme.list.itemModalBlocksBackgroundColor, isDark: presentationData.theme.overallDarkAppearance)
         }
-        self.cardNode.view.sendSubviewToBack(self.material)
+        self.itemContainerNode.view.sendSubviewToBack(self.material)
         transition.updateFrame(node: self.topSeparatorNode, frame: CGRect(origin: CGPoint(x: 0.0, y: contentWithBackgroundOffset - UIScreenPixel), size: CGSize(width: width, height: UIScreenPixel)))
         transition.updateFrame(node: self.bottomSeparatorNode, frame: CGRect(origin: CGPoint(x: 0.0, y: contentWithBackgroundHeight), size: CGSize(width: width, height: UIScreenPixel)))
         

@@ -33,13 +33,22 @@ recording is still needed to judge the new physical interaction and actual frame
 
 ## First-frame material and avatar readiness
 
-Information cards reuse Display's tint-free `BlurredBackgroundView` from creation, without the dark
-fill of `systemUltraThinMaterialDark`. A separate 6.5% white tint in the dark theme or 5.5% black tint
-in the light theme keeps cards distinct without a dense panel or an image-dependent palette switch. Geometry updates do not
-reset its backdrop state. A separate opaque theme fill handles collapse; the blur's alpha stays one.
-Profile section entry avoids fading the material's ancestor. This follows [UIKit's effect alpha
-requirements](https://developer.apple.com/documentation/uikit/uivisualeffectview). The neutral black
-card tint no longer waits for the photo's average color, so photo completion does not rebuild rows.
+Information cards and music use ContactsUICore's `ContactCardStyleProvider.defaultBackgroundMaterial`
+on iOS 26+. The earlier `lightweightThin` provider looked dense in the isolated comparison and is not used for cards. The system framework
+is loaded once and retained while SwiftUI owns its material provider. This is a private system entry
+point, resolved dynamically; if unavailable, the public ultra-thin material is used instead. No Apple
+binary is bundled. Reduce Transparency retains an opaque accessible background.
+
+The native card material has no added tint. Its color scheme follows the application theme and does
+not change during scroll. The effect stays at alpha one; an independent application-theme fill covers
+it as the profile collapses. Material and clipped rows are siblings, so animating a business-hours row
+does not clip or flatten the backdrop effect. Profile tabs likewise sit above the glass rather than
+inside its optical clip. The track disables whole-plate scale/alpha highlighting.
+
+An isolated card comparison ran on the user's iOS 27.0.1 VM, using the system getter in both color
+schemes. The user accepted its direction. Captured frame: external validation directory,
+`contacts-material-lab/vibrant-native.jpg`. This verifies the material in isolation, not the complete
+profile or its scrolling animation; integrated recorded-frame checks remain required.
 
 The backdrop starts with the decoded round avatar while a gallery photo is unavailable. Blur is
 prepared off-main at a 256-pixel maximum edge and cached with a 4 MiB/12-entry limit, without retaining
@@ -47,16 +56,12 @@ the source photos. A bounded thumbnail color provides the initial fill; arriving
 changes crossfade over 0.22 seconds. A separate 5.5% black shade gently dims the decorative backdrop;
 the full-screen shade and the card tint have independent roles and do not share an appearance switch.
 
-The prepared photo uses the same aspect-fill crop and on-screen frame as the expanded avatar.
-Only the blurred bottom edge continues below that frame; the entire avatar is no longer enlarged
-to fill the viewport. This keeps a centered sticker from coloring the whole profile and aligns
-the sharp-to-blur fade on photos with a distinct lower edge. Blur preparation remains bounded and
-off-main; crop aspect is part of its cache key.
-
-Cards animate a single outer rounded clip while keeping the blur's sampling area at the larger
-of the old/new heights. The sampling area settles after the clip animation. The track disables
-the whole-plate scale highlight, which invalidates live blur on press. Profile tabs use clear
-glass with a stable base appearance and no extra clipping of the glass's refractive edge.
+The build16 avatar changes were rejected on device: the lower background ended in a visible horizontal
+edge, the photo appeared cut, and the gallery motion regressed. Avatar/backdrop geometry, masks,
+image preparation and scroll palette application are restored to the November 14 revision `77f9ef704`.
+The native card material and music press fix remain. This restores the previously working baseline;
+it does not claim that the baseline's original photo/blur seam is solved. Future changes must be
+compared against recorded full-profile frames before replacing that baseline.
 
 Before visual acceptance, record cold/warm profile opens, delayed gallery-image loading, avatar
 expansion, gift covers and scroll-to-theme in both themes. Expect no pale first card, abrupt material

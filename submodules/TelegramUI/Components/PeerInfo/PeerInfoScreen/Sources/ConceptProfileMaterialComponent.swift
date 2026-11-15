@@ -12,17 +12,18 @@ final class ConceptProfileMaterialView: UIView {
         let isDark: Bool
         let reduceTransparency: Bool
     }
-    private let blur = BlurredBackgroundView(color: nil)
+    private let blur = ConceptContactsMaterialView()
     private let tint = UIView()
     private let solidBackground = UIView()
     let contentView = UIView()
     private var appearance: Appearance?
+    private var geometry: (CGSize, CGFloat)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        self.clipsToBounds = true
         self.layer.cornerCurve = .continuous
-        self.blur.updateColor(color: .clear, forceKeepBlur: true, transition: .immediate)
+        self.tint.layer.cornerCurve = .continuous
+        self.solidBackground.layer.cornerCurve = .continuous
         self.blur.isUserInteractionEnabled = false
         self.tint.isUserInteractionEnabled = false
         self.solidBackground.isUserInteractionEnabled = false
@@ -44,7 +45,8 @@ final class ConceptProfileMaterialView: UIView {
             transition.updateBackgroundColor(layer: self.tint.layer, color: fallback)
             transition.updateAlpha(layer: self.solidBackground.layer, alpha: 0.0)
         } else {
-            transition.updateBackgroundColor(layer: self.tint.layer, color: tintColor)
+            transition.updateBackgroundColor(layer: self.tint.layer, color: ConceptContactsMaterialView.nativeAvailable ? .clear : tintColor)
+            self.blur.update(radius: self.geometry?.1 ?? 24.0, isDark: isDark)
             transition.updateBackgroundColor(layer: self.solidBackground.layer, color: targetColor)
             // Cover the stable blur with the actual application theme when collapsing.
             // Fading the effect itself or swapping its appearance produces brightness flashes.
@@ -57,10 +59,13 @@ final class ConceptProfileMaterialView: UIView {
     }
 
     func updateLayout(size: CGSize, radius: CGFloat, transition: ContainedViewLayoutTransition) {
-        self.layer.cornerRadius = radius
+        if let geometry = self.geometry, geometry.0 == size, geometry.1 == radius { return }
+        self.geometry = (size, radius)
+        self.tint.layer.cornerRadius = radius
+        self.solidBackground.layer.cornerRadius = radius
         let bounds = CGRect(origin: .zero, size: size)
         transition.updateFrame(view: self.blur, frame: bounds)
-        self.blur.update(size: size, transition: transition)
+        self.blur.update(radius: radius, isDark: self.appearance?.isDark ?? false)
         transition.updateFrame(view: self.tint, frame: bounds)
         transition.updateFrame(view: self.solidBackground, frame: bounds)
         transition.updateFrame(view: self.contentView, frame: bounds)
@@ -91,7 +96,6 @@ final class ConceptProfileMaterialComponent: Component {
         override init(frame: CGRect) {
             super.init(frame: frame)
             self.isUserInteractionEnabled = false
-            self.clipsToBounds = true
             self.layer.cornerCurve = .continuous
             self.addSubview(self.material)
         }

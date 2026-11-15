@@ -1437,7 +1437,7 @@ final class PeerInfoPaneContainerNode: ASDisplayNode, ASGestureRecognizerDelegat
         
         if let tabsContainerView = self.tabsContainer.view as? HorizontalTabsComponent.View {
             if tabsContainerView.superview == nil {
-                self.tabsBackgroundView.contentView.addSubview(tabsContainerView)
+                self.tabsBackgroundContainer.addSubview(tabsContainerView)
                 tabsContainerView.setOverlayContainerView(overlayContainerView: self.headerContainer)
             }
             transition.updateFrame(view: tabsContainerView, frame: CGRect(origin: CGPoint(), size: tabContainerFrame.size))

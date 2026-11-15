@@ -356,8 +356,8 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             self.conceptSharpPhotoMask.frame = photoView.bounds
-            self.conceptSharpPhotoMask.colors = [UIColor.white.cgColor, UIColor.white.cgColor, UIColor(white: 1.0, alpha: 0.85).cgColor, UIColor(white: 1.0, alpha: 0.35).cgColor, UIColor.clear.cgColor]
-            self.conceptSharpPhotoMask.locations = [0.0, 0.46, 0.64, 0.84, 1.0]
+            self.conceptSharpPhotoMask.colors = [UIColor.white.cgColor, UIColor.white.cgColor, UIColor.clear.cgColor]
+            self.conceptSharpPhotoMask.locations = [0.0, 0.60, 1.0]
             CATransaction.commit()
             photoView.layer.mask = self.conceptSharpPhotoMask
         } else if photoView?.layer.mask === self.conceptSharpPhotoMask {

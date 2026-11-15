@@ -2839,7 +2839,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                                     )
                                 ], spacing: 4.0)
                             ),
-                            background: usesProfileSurface ? AnyComponent(ConceptProfileMaterialComponent(isDark: isOverlay || presentationData.theme.overallDarkAppearance, fallbackColor: conceptProfileSurfaceColor(presentationData.theme, dominantColor: self.conceptDominantColor, fraction: self.conceptThemeFraction, decorative: isOverlay))) : nil,
+                            background: usesProfileSurface ? AnyComponent(ConceptProfileMaterialComponent(isDark: presentationData.theme.overallDarkAppearance, fallbackColor: conceptProfileSurfaceColor(presentationData.theme, dominantColor: self.conceptDominantColor, fraction: self.conceptThemeFraction, decorative: isOverlay))) : nil,
                             minSize: CGSize(width: usesProfileSurface ? 0.0 : musicBandWidth, height: musicHeight),
                             contentInsets: usesProfileSurface ? UIEdgeInsets(top: 0.0, left: 12.0, bottom: 0.0, right: 12.0) : UIEdgeInsets(),
                             action: { [weak self] in
