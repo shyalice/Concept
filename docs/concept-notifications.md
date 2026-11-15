@@ -50,7 +50,9 @@ unread notification or a different account's conversation. iOS cannot run this c
 the app is force-quit; reconciliation resumes when the app runs again.
 
 The optional blocked-user filter removes blocked authors from history before grouping and strips
-associated reply previews/quotes. Core notification selection and the extension use the same cached
+associated reply previews/quotes. In the main chat list, a blocked last author leaves an empty
+message preview, including media and sender details, while retaining the chat and its sort index.
+Block-state and toggle changes update previews without replaying a navigation request. Core notification selection and the extension use the same cached
 block state. The delivery path checks again after avatar preparation; existing blocked-author
 notifications are removed when the block state or filter changes. Pinned/mention/reply actions and
 per-chat exceptions use one Foundation policy shared by local delivery and the extension.
@@ -66,3 +68,8 @@ Run the Foundation routing/presentation and delivery lifecycle tests with
 Validation: those Foundation tests, the extension host
 suite, full app builds and strict app/extension signature verification. These are not a signed-device
 multi-account delivery/read test. Keep that distinction when reporting results.
+
+The chat-list preview mapper was also compiled directly against small data fixtures: blocked latest
+messages and archive message previews are removed; allowed latest messages, unknown authors, row
+order, drafts and unread counters are retained. An empty blocked set restores the original entries.
+This mapper check does not substitute for a signed-device test of the reactive chat list.

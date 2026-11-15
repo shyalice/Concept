@@ -2005,7 +2005,7 @@ public final class ChatListNode: ListViewImpl {
             shouldLoadCanMessagePeer = false
         }
         
-        let chatListViewUpdate = self.chatListLocation.get()
+        let unfilteredChatListViewUpdate = self.chatListLocation.get()
         |> distinctUntilChanged
         |> mapToSignal { listLocation -> Signal<(ChatListNodeViewUpdate, ChatListFilter?), NoError> in
             return chatListViewForLocation(chatListLocation: location, location: listLocation, account: context.account, shouldLoadCanMessagePeer: shouldLoadCanMessagePeer)
@@ -2014,6 +2014,8 @@ public final class ChatListNode: ListViewImpl {
             }
         }
         
+        let chatListViewUpdate = conceptChatListPreviewUpdates(context: context, updates: unfilteredChatListViewUpdate)
+
         let previousState = Atomic<ChatListNodeState>(value: self.currentState)
         let previousView = Atomic<ChatListNodeView?>(value: nil)
         let previousHideArchivedFolderByDefault = Atomic<Bool?>(value: nil)
@@ -2282,7 +2284,7 @@ public final class ChatListNode: ListViewImpl {
             accountIsPremium
         )
         |> mapToQueue { (hideArchivedFolderByDefault, displayArchiveIntro, storageInfo, savedMessagesPeer, updateAndFilter, state, contacts, chatListFilters, accountIsPremiumAndPeer: ChatListNodeAccountPeerState) -> Signal<ChatListNodeListViewTransition, NoError> in
-            let (update, filter) = updateAndFilter
+            let (update, filter, blockedPreviewAuthors) = updateAndFilter
             let accountIsPremium = accountIsPremiumAndPeer.isPremium
             
             let previousHideArchivedFolderByDefaultValue = previousHideArchivedFolderByDefault.swap(hideArchivedFolderByDefault)
@@ -2290,6 +2292,7 @@ public final class ChatListNode: ListViewImpl {
             let innerIsMainTab = location == .chatList(groupId: .root) && chatListFilter == nil
             
             var (rawEntries, isLoading) = chatListNodeEntriesForView(view: update.list, state: state, savedMessagesPeer: savedMessagesPeer, foundPeers: state.foundPeers, hideArchivedFolderByDefault: hideArchivedFolderByDefault, displayArchiveIntro: displayArchiveIntro, mode: mode, chatListLocation: location, contacts: contacts, accountPeerId: accountPeerId, isMainTab: innerIsMainTab)
+            rawEntries = conceptChatListEntriesHidingBlockedPreviews(rawEntries, blockedAuthors: blockedPreviewAuthors)
             if isSideList, case .savedMessagesChats = location, let parentPeer = accountIsPremiumAndPeer.parentPeer, let allThreadsEntry = chatListSideListAllThreadsEntry(entries: rawEntries, parentPeer: parentPeer) {
                 rawEntries.append(allThreadsEntry)
                 rawEntries.sort()
