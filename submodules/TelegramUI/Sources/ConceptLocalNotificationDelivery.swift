@@ -340,13 +340,8 @@ func conceptLocalNotificationContent(candidate: EngineBackgroundNotificationCand
         if isGroup, let count = groupCount, count > 1 {
             metadata.recipientCount = count - 1
         }
-        metadata.mentionsCurrentUser = message._asMessage().tags.contains(.unseenPersonalMessage)
-        for attribute in message.attributes {
-            if let reply = attribute as? ReplyMessageAttribute,
-               let replied = message._asMessage().associatedMessages[reply.messageId] {
-                metadata.isReplyToCurrentUser = replied.author?.id == account.account.peerId
-            }
-        }
+        // Keep system communication headers to chat/author names. Mention/reply
+        // delivery and mute exceptions are evaluated separately before rendering.
         intent.donationMetadata = metadata
         if let senderImage {
             intent.setImage(senderImage, forParameterNamed: \.sender)

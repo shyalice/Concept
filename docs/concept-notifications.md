@@ -105,3 +105,8 @@ Long idle and interrupted-device runs remain necessary to establish those proper
 Reproduce the keepalive host tests with `python3 tools/test_concept_keepalive.py`. The harness copies
 the current production class body into external scratch storage and substitutes platform audio/app
 objects, leaving application source files untouched. It also runs the Foundation notification suite.
+
+Communication donation metadata no longer advertises mentions/replies to the system renderer, avoiding
+extra “mentioned you”/“replied to you” headers. The group recipient count, sender images, chat/author
+layout and delivery/mute exception policy are retained. Native-extension rendering did not set these
+metadata flags and is unchanged. Existing notifications may retain their old system presentation.
