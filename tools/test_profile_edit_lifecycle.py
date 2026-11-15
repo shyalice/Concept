@@ -56,7 +56,15 @@ private class Header {
         if expanded && resetGallery { galleryIndex = 0 }
     }
 }
+private class ConceptProfileEditTransition {
+    var isApplyingChanges = false
+    func perform(in view: Node, animated: Bool = true, changes: () -> Void) {
+        isApplyingChanges = true; changes(); isApplyingChanges = false
+    }
+}
 private class Harness {
+    let view = Node()
+    private let profileEditTransition = ConceptProfileEditTransition()
     var state = State()
     let scrollNode = ScrollNode()
     let headerNode = Header()
@@ -67,7 +75,7 @@ private class Harness {
     var layouts: [ContainedViewLayoutTransition] = []
     private var profileBeforeEditing: (expanded: Bool, contentOffset: CGPoint)?
     func containerLayoutUpdated(layout: CGSize, navigationHeight: CGFloat, transition: ContainedViewLayoutTransition, additive: Bool) {
-        precondition(ignoreScrolling); precondition(!additive); layouts.append(transition); ignoreScrolling=false
+        precondition(ignoreScrolling); precondition(profileEditTransition.isApplyingChanges); precondition(!additive); layouts.append(transition); ignoreScrolling=false
     }
     func run(_ value: Bool) { updateProfileEditing(value) }
 METHOD
@@ -84,7 +92,7 @@ private func testExpandedReturn() {
     expect(h.headerNode.galleryIndex == 7, "preserve the selected avatar")
     expect(h.state.bio == nil && h.state.birthday == nil && h.state.note == nil && !h.state.editingBirthday, "cancel discards drafts")
     expect(h.paneContainerNode.isUserInteractionEnabled && h.headerNode.regularContentNode.isUserInteractionEnabled, "restore profile input")
-    expect(h.layouts == [.animated(duration:0.3,curve:.easeInOut), .animated(duration:0.3,curve:.easeInOut)], "one shared curve for entry and exit")
+    expect(h.layouts == [.immediate, .immediate], "complete target layouts are staged behind the outgoing composite")
 }
 private func testCollapsedScrolledReturnAndDuplicateActions() {
     let h=Harness(); h.scrollNode.view.contentOffset=CGPoint(x:0,y:240)
@@ -92,7 +100,7 @@ private func testCollapsedScrolledReturnAndDuplicateActions() {
     expect(h.layouts.count == 1 && h.scrollNode.view.contentOffset == .zero, "duplicate edit does not overwrite return position")
     h.run(false); h.run(false)
     expect(h.layouts.count == 2 && h.scrollNode.view.contentOffset.y == 240 && !h.headerNode.isAvatarExpanded, "restore collapsed scroll position once")
-    expect(h.scrollNode.offsets == [240,-240], "scroll compensates on the same curve")
+    expect(h.scrollNode.offsets.isEmpty, "stock dissolve never animates scroll independently")
 }
 private func testRepeatedAndRapidCycles() {
     let h=Harness()
@@ -116,7 +124,7 @@ private func testPresentationOffsetHandoff() {
     let h=Harness(); h.scrollNode.view.contentOffset=CGPoint(x:0,y:240)
     let layer=Layer(); layer.bounds.origin.y=120; h.scrollNode.layer.presented=layer
     h.run(true)
-    expect(h.scrollNode.offsets == [120], "interruptions start at the visible scroll position")
+    expect(h.scrollNode.offsets.isEmpty, "interrupted crossfade does not add a travelling layout")
 }
 testExpandedReturn();testCollapsedScrolledReturnAndDuplicateActions();testRepeatedAndRapidCycles();testReducedMotionAndMissingLayout();testPresentationOffsetHandoff()
 print("Passed five profile edit lifecycle cases against the production transition method; platform rendering is not covered.")

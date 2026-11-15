@@ -121,7 +121,7 @@ correct concrete button view. Existing editing sections and `usesProfileSurface 
 using ordinary presentation data. Settings → Edit does not enter from a glass music root.
 The real My Profile → Edit → Cancel/Done transition still needs a device run after installing the fix.
 
-## Edit round trip after build 24
+## Edit round trip in build 25 (superseded by build 26)
 
 The profile now owns one live 0.3-second ease-in/out transition for Edit entry and exit. It does not
 run `UIView.transition` over the profile's native material hierarchy. The already working Settings
@@ -148,3 +148,49 @@ with platform doubles. It does not validate rendering. Required device frames st
 Cancel and Edit → Done, music, card corners, keyboard open/closed and rapid reversal in both themes:
 expect no black corner wedges, stale plain music, resetting gallery, teleported rows or delayed plate.
 The VM remains unavailable and no XcodeBuildMCP tools are exposed, so those frames are outstanding.
+
+
+## Edit transition and avatar wrap (build 26)
+
+The build 25 user recording shows a hard background cut at frame #6 (t=0.133 s),
+followed by crossing profile/editor rows. Its live geometry morph is replaced by a
+0.3-second opacity dissolve between complete, stationary layouts. Before changing
+state, ConceptProfileEditTransition captures the visible window composite including
+the material's background; it prepares the target layout without independent header
+or scroll animations, then fades the old composite. A rapid reversal captures the
+currently visible composite and invalidates the older completion. Reduced Motion and
+missing windows skip the animation. Settings' existing Edit path remains unchanged.
+The editor stays stock; expansion, scroll position and selected avatar are restored.
+
+This follows [Apple's UIVisualEffectView snapshot guidance](https://developer.apple.com/documentation/uikit/uivisualeffectview): capture the complete
+window/screen rather than an effect view in isolation. The native `snapshotView`
+path uses already rendered content, avoiding a synchronous CPU bitmap render. No card recipe, tint, normal
+photo crop or geometry changes are included. Music is recreated on exit as in build
+25; immediate visibility updates also clear a stale opacity animation left by collapse.
+
+The avatar last-to-first path notified the profile before creating/layouting the
+replacement item. The mask consequently fell back to the full gallery height and
+exposed the reflected tail. A post-layout item callback now refreshes the backdrop
+when item identity or image geometry changes, and missing geometry retains the last
+valid fade for the same bounds. Intermediate horizontal pan frames do not repeatedly
+trigger that callback.
+
+Validation outside the repository: `profile-edit-window-lab/transition-snapshot.mp4`
+uses the production transition helper, Contacts material and photo mask in an isolated
+UIKit simulator app, not a logged-in Telegram profile. `snapshot-motion` #0–#19
+(t=9.608–9.927) show dark entry, #32–#49 (11.092–11.377) show return;
+`snapshot-light` #22–#41 (17.177–17.493) and #43–#63 (18.410–18.725) show
+light entry/return. Rows stay fixed and the background/rounded corners dissolve
+together; there is no isolated hard header cut or moving corner wedge. The frame
+analyzer flags no jump/gap in these two clips. Rapid reversal returns to the profile
+without a stale overlay. The actual photo mask passes valid → missing wrap frame →
+new valid geometry assertions. Host lifecycle tests cover state restoration,
+duplicate/rapid actions, reduced motion and missing layout.
+
+The earlier CPU-rendered candidate `transition-warm.mp4` was rejected: its capture
+plus isolated target layout cost about 38–53 ms, and recordings flagged 145/160 ms
+gaps at two entry handovers. The native snapshot candidate costs 9–29 ms on eight
+of nine actions, with a 107 ms return outlier while the full app compiler is active.
+These are simulator observations, not a device frame-pacing guarantee. Full profile
+Edit→Cancel/Done with keyboard, music and avatar wrap still requires a device run.
+The user VM was left off; the lab used its own disposable simulator.

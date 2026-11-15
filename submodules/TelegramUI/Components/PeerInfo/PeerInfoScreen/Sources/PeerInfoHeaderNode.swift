@@ -98,9 +98,6 @@ final class PeerInfoHeaderNode: ASDisplayNode {
     private weak var controller: PeerInfoScreenImpl?
     private var presentationData: PresentationData?
     private var state: PeerInfoState?
-    private var editingContentTransitionGeneration = 0
-    private var retainsOutgoingEditingContent = false
-    private var editingContentLayoutHeight: CGFloat = 0.0
     private var peer: EnginePeer?
     private var threadData: MessageHistoryThreadData?
     private var isSearching: Bool = false
@@ -640,7 +637,6 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             peer = .user(user.withUpdatedEmojiStatus(nil))
         }
         
-        let wasEditing = self.state?.isEditing ?? false
         self.state = state
         self.peer = peer
         self.threadData = threadData
@@ -753,33 +749,10 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         transition.updateAlpha(node: self.regularContentNode, alpha: (state.isEditing || self.customNavigationContentNode != nil) ? 0.0 : 1.0)
         self.updateNavigationRowHidden?(self.customNavigationContentNode != nil || isSearching, transition)
         
-        if !self.isSettings {
-            if wasEditing != state.isEditing {
-                self.editingContentTransitionGeneration += 1
-                self.retainsOutgoingEditingContent = !state.isEditing && transition.isAnimated
-                if state.isEditing {
-                    // A cancelled draft must not survive a rapid return to Edit.
-                    for node in self.editingContentNode.itemNodes.values { node.removeFromSupernode() }
-                    self.editingContentNode.itemNodes.removeAll()
-                }
-                let generation = self.editingContentTransitionGeneration
-                transition.updateAlpha(node: self.editingContentNode, alpha: state.isEditing ? 1.0 : 0.0, completion: { [weak self] _ in
-                    guard let self, self.editingContentTransitionGeneration == generation, self.retainsOutgoingEditingContent else { return }
-                    self.retainsOutgoingEditingContent = false
-                    self.requestUpdateLayout?(false)
-                })
-            } else if !self.retainsOutgoingEditingContent {
-                transition.updateAlpha(node: self.editingContentNode, alpha: state.isEditing ? 1.0 : 0.0)
-            }
-        } else {
-            self.editingContentNode.alpha = state.isEditing ? 1.0 : 0.0
-        }
-        if !self.retainsOutgoingEditingContent {
-            self.editingContentLayoutHeight = self.editingContentNode.update(width: width, leftInset: sideInsets.sectionLeft, rightInset: sideInsets.sectionRight, statusBarHeight: statusBarHeight, navigationHeight: navigationHeight, presentedInFormSheet: presentedInFormSheet, peer: state.isEditing ? peer : nil, threadData: threadData, chatLocation: self.chatLocation, cachedData: cachedData, isContact: isContact, isSettings: isSettings || isMyProfile, presentationData: presentationData, transition: transition)
-            transition.updateFrame(node: self.editingContentNode, frame: CGRect(origin: CGPoint(x: 0.0, y: -contentOffset), size: CGSize(width: width, height: self.editingContentLayoutHeight)))
-        }
-        let editingContentHeight = self.editingContentLayoutHeight
-        
+        self.editingContentNode.alpha = state.isEditing ? 1.0 : 0.0
+        let editingContentHeight = self.editingContentNode.update(width: width, leftInset: sideInsets.sectionLeft, rightInset: sideInsets.sectionRight, statusBarHeight: statusBarHeight, navigationHeight: navigationHeight, presentedInFormSheet: presentedInFormSheet, peer: state.isEditing ? peer : nil, threadData: threadData, chatLocation: self.chatLocation, cachedData: cachedData, isContact: isContact, isSettings: isSettings || isMyProfile, presentationData: presentationData, transition: transition)
+        transition.updateFrame(node: self.editingContentNode, frame: CGRect(origin: CGPoint(x: 0.0, y: -contentOffset), size: CGSize(width: width, height: editingContentHeight)))
+
         let avatarOverlayFarme = self.editingContentNode.convert(self.editingContentNode.avatarNode.frame, to: self)
         transition.updateFrame(node: self.avatarOverlayNode, frame: avatarOverlayFarme)
         
@@ -2896,6 +2869,9 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                     }
 
                     let appearanceTransition: ContainedViewLayoutTransition = usesProfileSurface ? musicTransition : .animated(duration: 0.2, curve: .easeInOut)
+                    if usesProfileSurface, !appearanceTransition.isAnimated {
+                        musicView.layer.removeAnimation(forKey: "opacity")
+                    }
                     appearanceTransition.updateAlpha(layer: musicView.layer, alpha: backgroundBannerAlpha)
                 }
             }

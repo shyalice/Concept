@@ -2701,6 +2701,9 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
         self.headerNode.avatarListNode.listContainerNode.currentIndexUpdated = { [weak self] in
             self?.updateNavigation(transition: .immediate, additive: true, animateHeader: true)
         }
+        self.headerNode.avatarListNode.listContainerNode.currentItemLayoutUpdated = { [weak self] in
+            self?.updateConceptBackdrop(transition: .immediate)
+        }
         
         let reactionSourceMessage: Signal<EngineMessage?, NoError>
         if let reactionSourceMessageId = self.reactionSourceMessageId {
@@ -2945,42 +2948,36 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
         
     var canAttachVideo: Bool?
     private var profileBeforeEditing: (expanded: Bool, contentOffset: CGPoint)?
+    private let profileEditTransition = ConceptProfileEditTransition()
 
     private func updateProfileEditing(_ editing: Bool) {
         guard self.state.isEditing != editing else { return }
-        let previousOffset = self.scrollNode.layer.presentation()?.bounds.origin ?? self.scrollNode.view.contentOffset
-        let targetOffset: CGPoint
-        let expanded: Bool
-        if editing {
-            self.profileBeforeEditing = (self.headerNode.isAvatarExpanded, self.scrollNode.view.contentOffset)
-            targetOffset = .zero
-            expanded = false
-        } else {
-            targetOffset = self.profileBeforeEditing?.contentOffset ?? .zero
-            expanded = self.profileBeforeEditing?.expanded ?? false
-            self.profileBeforeEditing = nil
+        self.profileEditTransition.perform(in: self.view) {
+            let targetOffset: CGPoint
+            let expanded: Bool
+            if editing {
+                self.profileBeforeEditing = (self.headerNode.isAvatarExpanded, self.scrollNode.view.contentOffset)
+                targetOffset = .zero
+                expanded = false
+                self.state = self.state.withIsEditing(true)
+            } else {
+                targetOffset = self.profileBeforeEditing?.contentOffset ?? .zero
+                expanded = self.profileBeforeEditing?.expanded ?? false
+                self.profileBeforeEditing = nil
+                self.state = self.state.withIsEditing(false).withUpdatingBio(nil).withUpdatingBirthDate(nil).withIsEditingBirthDate(false).withUpdatingNote(nil)
+            }
+            self.headerNode.updateIsAvatarExpanded(expanded, transition: .immediate, resetGallery: false)
+            self.headerNode.regularContentNode.isUserInteractionEnabled = !editing
+            self.headerNode.editingContentNode.isUserInteractionEnabled = editing
+            self.paneContainerNode.isUserInteractionEnabled = !editing
+            self.conceptAppliedPaletteKeys.removeAll()
+            self.ignoreScrolling = true
+            self.scrollNode.view.setContentOffset(targetOffset, animated: false)
+            if let (layout, navigationHeight) = self.validLayout {
+                self.containerLayoutUpdated(layout: layout, navigationHeight: navigationHeight, transition: .immediate, additive: false)
+            }
+            self.ignoreScrolling = false
         }
-        let transition: ContainedViewLayoutTransition = UIAccessibility.isReduceMotionEnabled
-            ? .immediate : .animated(duration: 0.3, curve: .easeInOut)
-        if editing {
-            self.state = self.state.withIsEditing(true)
-        } else {
-            self.state = self.state.withIsEditing(false).withUpdatingBio(nil).withUpdatingBirthDate(nil).withIsEditingBirthDate(false).withUpdatingNote(nil)
-        }
-        self.headerNode.updateIsAvatarExpanded(expanded, transition: transition, resetGallery: false)
-        self.headerNode.regularContentNode.isUserInteractionEnabled = !editing
-        self.headerNode.editingContentNode.isUserInteractionEnabled = editing
-        self.paneContainerNode.isUserInteractionEnabled = !editing
-        self.conceptAppliedPaletteKeys.removeAll()
-        self.ignoreScrolling = true
-        self.scrollNode.view.setContentOffset(targetOffset, animated: false)
-        if let (layout, navigationHeight) = self.validLayout {
-            self.containerLayoutUpdated(layout: layout, navigationHeight: navigationHeight, transition: transition, additive: false)
-        }
-        self.ignoreScrolling = false
-        // The scroll model moves once. Its presentation follows the same curve as
-        // the header/rows instead of firing an independent UIScrollView animation.
-        transition.animateOffsetAdditive(node: self.scrollNode, offset: previousOffset.y - self.scrollNode.view.contentOffset.y)
     }
     
     func activateEdit() {
@@ -6276,7 +6273,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
         }
                 
         self.ignoreScrolling = false
-        self.updateNavigation(transition: transition, additive: additive, animateHeader: self.controller?.didAppear ?? false)
+        self.updateNavigation(transition: transition, additive: additive, animateHeader: (self.controller?.didAppear ?? false) && !self.profileEditTransition.isApplyingChanges)
         
         if !self.didSetReady && self.data != nil {
             self.didSetReady = true

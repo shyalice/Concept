@@ -15,7 +15,11 @@ final class ConceptProfilePhotoFadeMask: CAGradientLayer {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     func update(size: CGSize, photoFrame: CGRect?) {
-        let photo = photoFrame.flatMap { $0.width > 0.0 && $0.height > 0.0 ? $0 : nil } ?? CGRect(origin: .zero, size: size)
+        let validPhoto = photoFrame.flatMap { $0.width.isFinite && $0.height.isFinite && $0.maxY.isFinite && $0.width > 0.0 && $0.height > 0.0 ? $0 : nil }
+        // At a wrap the old index notification may precede the replacement node.
+        // Never expose the reflected tail while waiting for its laid-out frame.
+        if validPhoto == nil, self.geometry?.0 == size { return }
+        let photo = validPhoto ?? CGRect(origin: .zero, size: size)
         if let geometry = self.geometry, geometry.0 == size, geometry.1 == photo { return }
         self.geometry = (size, photo)
         let height = max(1.0, size.height)

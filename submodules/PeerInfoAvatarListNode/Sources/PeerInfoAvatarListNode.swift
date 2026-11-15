@@ -914,6 +914,11 @@ public final class PeerInfoAvatarListContainerNode: ASDisplayNode {
     private var ignoreNextProfilePhotoUpdate = false
     public var itemsUpdated: (([PeerInfoAvatarListItem]) -> Void)?
     public var currentIndexUpdated: (() -> Void)?
+    /// Runs after the current item's image node exists and has its final frame.
+    public var currentItemLayoutUpdated: (() -> Void)?
+    private weak var lastNotifiedCurrentItem: PeerInfoAvatarListItemNode?
+    private var lastNotifiedImageFrame: CGRect?
+    private var lastNotifiedLayoutSize: CGSize?
     
     public var openStories: (() -> Void)?
     
@@ -1766,6 +1771,16 @@ public final class PeerInfoAvatarListContainerNode: ASDisplayNode {
         }
         
         self.updateStrips(size: size, itemsAdded: itemsAdded, stripTransition: stripTransition)
+
+        if let current = self.currentItemNode {
+            let imageFrame = current.imageNode.frame
+            if self.lastNotifiedCurrentItem !== current || self.lastNotifiedImageFrame != imageFrame || self.lastNotifiedLayoutSize != size {
+                self.lastNotifiedCurrentItem = current
+                self.lastNotifiedImageFrame = imageFrame
+                self.lastNotifiedLayoutSize = size
+                self.currentItemLayoutUpdated?()
+            }
+        }
         
         if let item = self.items.first, let itemNode = self.itemNodes[item.id] {
             if !self.didSetReady {
