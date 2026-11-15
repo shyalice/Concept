@@ -53,7 +53,7 @@ profile or its scrolling animation; integrated recorded-frame checks remain requ
 The backdrop starts with the decoded round avatar while a gallery photo is unavailable. Blur is
 prepared off-main at a 256-pixel maximum edge and cached with a 4 MiB/12-entry limit, without retaining
 the source photos. A bounded thumbnail color provides the initial fill; arriving images and tone
-changes crossfade over 0.22 seconds. A separate 3.5% black shade gently dims the decorative backdrop;
+changes crossfade over 0.22 seconds. A separate 5% black shade gently dims the decorative backdrop;
 the full-screen shade and the card tint have independent roles and do not share an appearance switch.
 
 The build16 avatar changes were rejected on device: the lower background ended in a visible horizontal
@@ -93,3 +93,8 @@ recipe and the corrected regular strip. Samples #0–#7 (t=0.000–2.748) in ext
 `profile-tabs-glass-frames/sheet.jpg` show the old brighter wash while the corrected strip matches
 the controls through changing backdrop colors. This compares the material recipes, not the full
 profile, selected-tab lens, or scroll transition.
+
+The backdrop-only shade is now 5%, up from 3.5%; card material and gallery geometry are unchanged.
+External isolated iOS captures `profile-shade-frames/sheet.jpg`, #0–#5 (t=0.000–1.539), compare
+the old and new shade over bright photo-like and gift-like color fields. The change is slight
+throughout the color sweep. These frames validate the shade layer, not the integrated profile.

@@ -126,7 +126,7 @@ final class ConceptProfileBackdropView: UIView {
         transition.updateFrame(view: self.photo, frame: bounds)
         transition.updateFrame(view: self.shade, frame: bounds)
         transition.updateFrame(view: self.themeFade, frame: bounds)
-        transition.updateAlpha(layer: self.shade.layer, alpha: visible && (expanded || self.hasCover) ? 0.035 : 0.0)
+        transition.updateAlpha(layer: self.shade.layer, alpha: visible && (expanded || self.hasCover) ? 0.05 : 0.0)
         // The sharp gallery fades into the cached, strongly blurred color field.
         CATransaction.begin()
         CATransaction.setDisableActions(true)
