@@ -31,7 +31,7 @@ final class ChatMessageContextLocationContentSource: ContextLocationContentSourc
 final class ChatMessageContextExtractedContentSource: ContextExtractedContentSource {
     let keepInPlace: Bool = false
     let ignoreContentTouches: Bool = false
-    let blurBackground: Bool = true
+    let blurBackground: Bool = false
     let centerVertically: Bool
     let keepDefaultContentTouches: Bool
     
@@ -448,7 +448,7 @@ final class ChatViewOnceMessageContextExtractedContentSource: ContextExtractedCo
 final class ChatMessageReactionContextExtractedContentSource: ContextExtractedContentSource {
     let keepInPlace: Bool = false
     let ignoreContentTouches: Bool = true
-    let blurBackground: Bool = true
+    let blurBackground: Bool = false
     let actionsHorizontalAlignment: ContextActionsHorizontalAlignment = .center
     
     private weak var chatNode: ChatControllerNode?

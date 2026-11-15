@@ -28,6 +28,17 @@ public func messageSingleBubbleLikeImage(fillColor: UIColor, strokeColor: UIColo
 
 private let minRadiusForFullTailCorner: CGFloat = 14.0
 
+private func drawConceptMessageBubbleTail(_ context: CGContext, inset: CGFloat = 0.0) {
+    let inset = max(0.0, min(2.0, inset))
+    context.move(to: CGPoint(x: 22.0, y: 24.0))
+    context.addLine(to: CGPoint(x: 32.0 - inset, y: 24.0))
+    context.addCurve(to: CGPoint(x: 39.0 - inset, y: 33.0 - inset), control1: CGPoint(x: 32.3 - inset, y: 28.0), control2: CGPoint(x: 34.0 - inset, y: 31.6 - inset))
+    context.addCurve(to: CGPoint(x: 29.8 - inset, y: 31.1 - inset), control1: CGPoint(x: 35.7 - inset, y: 33.0 - inset), control2: CGPoint(x: 31.8 - inset, y: 32.6 - inset))
+    context.addCurve(to: CGPoint(x: 17.0, y: 33.0 - inset), control1: CGPoint(x: 25.5, y: 33.0 - inset), control2: CGPoint(x: 21.5, y: 33.0 - inset))
+    context.closePath()
+    context.fillPath()
+}
+
 func mediaBubbleCornerImage(incoming: Bool, radius: CGFloat, inset: CGFloat) -> UIImage {
     let imageSize = CGSize(width: radius + 7.0, height: 8.0)
     let fixedMainDiameter: CGFloat = 33.0
@@ -63,17 +74,14 @@ func mediaBubbleCornerImage(incoming: Bool, radius: CGFloat, inset: CGFloat) -> 
         context.fillPath()
         
         if radius >= minRadiusForFullTailCorner {
-            context.move(to: CGPoint(x: bottomEllipse.minX, y: bottomEllipse.midY))
-            context.addQuadCurve(to: CGPoint(x: bottomEllipse.midX, y: bottomEllipse.maxY), control: CGPoint(x: bottomEllipse.minX, y: bottomEllipse.maxY))
-            context.addQuadCurve(to: CGPoint(x: bottomEllipse.maxX, y: bottomEllipse.midY), control: CGPoint(x: bottomEllipse.maxX, y: bottomEllipse.maxY))
-            context.fillPath()
+            drawConceptMessageBubbleTail(context, inset: inset)
         } else {
             context.fill(CGRect(origin: CGPoint(x: bottomEllipse.minX - 5.0, y: bottomEllipse.midY), size: CGSize(width: bottomEllipse.width + 5.0, height: bottomEllipse.height / 2.0)))
+            context.fill(CGRect(origin: CGPoint(x: fixedMainDiameter / 2.0, y: floor(fixedMainDiameter / 2.0)), size: CGSize(width: fixedMainDiameter / 2.0, height: ceil(bottomEllipse.midY) - floor(fixedMainDiameter / 2.0))))
+            context.setFillColor(UIColor.clear.cgColor)
+            context.setBlendMode(.copy)
+            context.fillEllipse(in: topEllipse)
         }
-        context.fill(CGRect(origin: CGPoint(x: fixedMainDiameter / 2.0, y: floor(fixedMainDiameter / 2.0)), size: CGSize(width: fixedMainDiameter / 2.0, height: ceil(bottomEllipse.midY) - floor(fixedMainDiameter / 2.0))))
-        context.setFillColor(UIColor.clear.cgColor)
-        context.setBlendMode(.copy)
-        context.fillEllipse(in: topEllipse)
     }
     
     return formContext.generateImage()!
@@ -229,17 +237,14 @@ public func messageBubbleImage(maxCornerRadius: CGFloat, minCornerRadius: CGFloa
         
         if drawTail {
             if maxCornerRadius >= minRadiusForFullTailCorner {
-                context.move(to: CGPoint(x: bottomEllipse.minX, y: bottomEllipse.midY))
-                context.addQuadCurve(to: CGPoint(x: bottomEllipse.midX, y: bottomEllipse.maxY), control: CGPoint(x: bottomEllipse.minX, y: bottomEllipse.maxY))
-                context.addQuadCurve(to: CGPoint(x: bottomEllipse.maxX, y: bottomEllipse.midY), control: CGPoint(x: bottomEllipse.maxX, y: bottomEllipse.maxY))
-                context.fillPath()
+                drawConceptMessageBubbleTail(context)
             } else {
                 context.fill(CGRect(origin: CGPoint(x: bottomEllipse.minX - 2.0, y: bottomEllipse.midY), size: CGSize(width: bottomEllipse.width + 2.0, height: bottomEllipse.height / 2.0)))
+                context.fill(CGRect(origin: CGPoint(x: fixedMainDiameter / 2.0, y: floor(fixedMainDiameter / 2.0)), size: CGSize(width: fixedMainDiameter / 2.0, height: ceil(bottomEllipse.midY) - floor(fixedMainDiameter / 2.0))))
+                context.setFillColor(UIColor.clear.cgColor)
+                context.setBlendMode(.copy)
+                context.fillEllipse(in: topEllipse)
             }
-            context.fill(CGRect(origin: CGPoint(x: fixedMainDiameter / 2.0, y: floor(fixedMainDiameter / 2.0)), size: CGSize(width: fixedMainDiameter / 2.0, height: ceil(bottomEllipse.midY) - floor(fixedMainDiameter / 2.0))))
-            context.setFillColor(UIColor.clear.cgColor)
-            context.setBlendMode(.copy)
-            context.fillEllipse(in: topEllipse)
         }
     }
     let formImage = formContext.generateImage()!
