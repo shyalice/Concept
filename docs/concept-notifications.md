@@ -73,3 +73,35 @@ The chat-list preview mapper was also compiled directly against small data fixtu
 messages and archive message previews are removed; allowed latest messages, unknown authors, row
 order, drafts and unread counters are retained. An empty blocked set restores the original entries.
 This mapper check does not substitute for a signed-device test of the reactive chat list.
+
+## Build 23 lifecycle and background cost
+
+Changing the global switch immediately updates delivery subscriptions and background ownership.
+Disabling stops the player, audio lease, recovery and watchdog, releases the network lease, and
+cancels queued Concept local notifications. Ordinary Telegram APNs and call notifications have
+separate settings; this switch does not disable those. Entering the foreground stops keepalive.
+A generation check prevents a delayed authorization or audio activation callback from restarting it.
+Eligible accounts and hidden-account changes are observed while backgrounded.
+
+Keepalive retains the native looping player. Audio-session and player callbacks handle normal
+interruptions/errors. A safety watchdog checks only player state once a minute, with 15 seconds of
+timer tolerance; it neither queries notification content nor polls the network/database. It runs only
+while Concept owns its audio lease. Recovery retries back off by 15, 30 and 45 seconds, then release
+the lease after repeated failures rather than retrying forever. Calls, recording and media still take
+priority. The previous ten-second recurring background-time extension is removed; running audio and
+the eligible-account network lease retain their existing responsibilities.
+
+Notification-center reconciliation is event driven: coalesced over 200 ms with one shared pending/
+delivered snapshot for all accounts and a coalesced one-second follow-up after message events.
+Existing database subscriptions continue observing synchronized read cursors, including remote reads,
+when the local-delivery switch is off. There is no periodic read-state polling while idle.
+
+Foundation notification tests and a separate host harness exercise the actual keepalive class body
+with audio/application platform doubles: delayed activation after stop, disabled/foreground guards,
+interruption, duplicate activation, unreported playback stop and exhausted recovery. These checks do
+not measure iPhone energy consumption, background scheduling, APNs timing or Apple Watch dismissal.
+Long idle and interrupted-device runs remain necessary to establish those properties.
+
+Reproduce the keepalive host tests with `python3 tools/test_concept_keepalive.py`. The harness copies
+the current production class body into external scratch storage and substitutes platform audio/app
+objects, leaving application source files untouched. It also runs the Foundation notification suite.

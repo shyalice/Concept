@@ -16,6 +16,10 @@ final class ConceptLocalNotificationService {
     private var leasedAccounts = Set<AccountRecordId>()
     private var networkLease: Disposable?
     private var observers: [NSObjectProtocol] = []
+    private var readRefreshTimer: SwiftSignalKit.Timer?
+    private var trailingReadRefreshTimer: SwiftSignalKit.Timer?
+    private var readRefreshInFlight = false
+    private var readRefreshPending = false
     private var isInBackground = UIApplication.shared.applicationState == .background
 
     init(context: SharedApplicationContext) {
@@ -25,8 +29,9 @@ final class ConceptLocalNotificationService {
         self.observation.set((combineLatest(queue: .mainQueue(),
             shared.activeAccountContexts,
             shared.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.inAppNotificationSettings]),
-            shared.conceptSecretPasscodes)
-        |> deliverOnMainQueue).start(next: { [weak self, weak context] active, preferences, rawSecrets in
+            shared.conceptSecretPasscodes,
+            BackgroundNotificationSettings.enabledSignal)
+        |> deliverOnMainQueue).start(next: { [weak self, weak context] active, preferences, rawSecrets, enabled in
             guard let self, let context else { return }
             self.settings = preferences.entries[ApplicationSpecificSharedDataKeys.inAppNotificationSettings]?.get(InAppNotificationSettings.self) ?? .defaultSettings
             let secrets = rawSecrets.withCheckedTimeoutUsingLockStateFile(rootPath: shared.basePath)
@@ -37,13 +42,14 @@ final class ConceptLocalNotificationService {
             for (id, account) in contexts where self.readTrackers[id] == nil {
                 self.readTrackers[id] = ConceptNotificationReadTracker(account: account)
             }
-            self.accounts.update(contexts.mapValues { ObjectIdentifier($0.account) }, subscribe: { id in
+            self.refreshReadNotifications()
+            self.accounts.update(enabled ? contexts.mapValues { ObjectIdentifier($0.account) } : [:], subscribe: { id in
                 guard let account = contexts[id] else { return EmptyDisposable }
                 return (account.account.stateManager.notificationMessages
                 |> deliverOnMainQueue
                 |> beforeNext { [weak self] _ in
-                    self?.readTrackers[id]?.refresh()
-                    Queue.mainQueue().after(1.0) { [weak self] in self?.readTrackers[id]?.refresh() }
+                    self?.refreshReadNotifications()
+                    self?.scheduleTrailingReadRefresh()
                 }
                 |> mapToQueue { [weak self, weak context] messageList -> Signal<Void, NoError> in
                     guard let self, let context, BackgroundNotificationSettings.isEnabled,
@@ -76,8 +82,45 @@ final class ConceptLocalNotificationService {
         })
     }
 
+    private func scheduleTrailingReadRefresh() {
+        guard self.trailingReadRefreshTimer == nil else { return }
+        let timer = SwiftSignalKit.Timer(timeout: 1.0, repeat: false, completion: { [weak self] in
+            self?.trailingReadRefreshTimer = nil
+            self?.refreshReadNotifications()
+        }, queue: .mainQueue())
+        self.trailingReadRefreshTimer = timer
+        timer.start()
+    }
+
     private func refreshReadNotifications() {
-        for tracker in self.readTrackers.values { tracker.refresh() }
+        guard self.readRefreshTimer == nil else { return }
+        let timer = SwiftSignalKit.Timer(timeout: 0.2, repeat: false, completion: { [weak self] in
+            self?.readRefreshTimer = nil
+            self?.fetchReadNotifications()
+        }, queue: .mainQueue())
+        self.readRefreshTimer = timer
+        timer.start()
+    }
+
+    private func fetchReadNotifications() {
+        guard !self.readRefreshInFlight else { self.readRefreshPending = true; return }
+        guard !self.readTrackers.isEmpty else { return }
+        self.readRefreshInFlight = true
+        let center = UNUserNotificationCenter.current()
+        center.getDeliveredNotifications { [weak self] delivered in
+            center.getPendingNotificationRequests { pending in
+                Queue.mainQueue().async {
+                    guard let self else { return }
+                    self.readRefreshInFlight = false
+                    let requests = delivered.map(\.request) + pending
+                    for tracker in self.readTrackers.values { tracker.reconcile(requests) }
+                    if self.readRefreshPending {
+                        self.readRefreshPending = false
+                        self.refreshReadNotifications()
+                    }
+                }
+            }
+        }
     }
 
     private func updateNetworkLease() {
@@ -93,6 +136,8 @@ final class ConceptLocalNotificationService {
         self.observation.dispose()
         self.accounts.dispose()
         self.networkLease?.dispose()
+        self.readRefreshTimer?.invalidate()
+        self.trailingReadRefreshTimer?.invalidate()
         for observer in self.observers { NotificationCenter.default.removeObserver(observer) }
     }
 }

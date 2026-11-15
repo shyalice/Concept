@@ -3,13 +3,16 @@ import AVFAudio
 import UIKit
 import SwiftSignalKit
 import TelegramAudio
+import ConceptNotifications
 
-final class ConceptBackgroundKeepAlive {
+final class ConceptBackgroundKeepAlive: NSObject, AVAudioPlayerDelegate {
     private let activePromise = ValuePromise<Bool>(false, ignoreRepeated: true)
     var isRunning: Signal<Bool, NoError> { self.activePromise.get() }
 
     private var player: AVAudioPlayer?
-    private var timer: SwiftSignalKit.Timer?
+    private var watchdog: DispatchSourceTimer?
+    private var recovery: DispatchWorkItem?
+    private var recoveryAttempt = 0
     private var audioLease: Disposable?
     private var audioObserver: Disposable?
     private weak var wakeupManager: SharedWakeupManager?
@@ -20,28 +23,19 @@ final class ConceptBackgroundKeepAlive {
 
     func start(wakeupManager: SharedWakeupManager) {
         assert(Queue.mainQueue().isCurrent())
-        guard !self.enabled else { return }
+        guard BackgroundNotificationSettings.isEnabled, UIApplication.shared.applicationState == .background, !self.enabled else { return }
         self.enabled = true
+        self.recoveryAttempt = 0
         self.wakeupManager = wakeupManager
         let generation = self.generation
         self.audioObserver = (MediaManagerImpl.globalAudioSession.isActive()
         |> deliverOnMainQueue).start(next: { [weak self] active in
             guard let self, self.enabled, self.generation == generation else { return }
             // Don't push playback above a call, recording, or media already playing.
-            if !active, self.audioLease == nil {
+            if !active, self.audioLease == nil, self.recoveryAttempt < 3 {
                 self.acquireAudio(generation: generation)
             }
         })
-        let timer = SwiftSignalKit.Timer(timeout: 10.0, repeat: true, completion: { [weak self] in
-            guard let self else { return }
-            if self.ownsAudio, self.player?.isPlaying != true { self.startPlayer() }
-            self.activePromise.set(self.player?.isPlaying == true)
-            if self.player?.isPlaying == true {
-                self.wakeupManager?.allowBackgroundTimeExtension(timeout: 30.0, extendNow: true)
-            }
-        }, queue: .mainQueue())
-        self.timer = timer
-        timer.start()
     }
 
     func stop() {
@@ -51,8 +45,11 @@ final class ConceptBackgroundKeepAlive {
         self.generation += 1
         self.audioObserver?.dispose()
         self.audioObserver = nil
-        self.timer?.invalidate()
-        self.timer = nil
+        self.watchdog?.cancel()
+        self.watchdog = nil
+        self.recovery?.cancel()
+        self.recovery = nil
+        self.recoveryAttempt = 0
         self.player?.stop()
         self.player = nil
         self.activePromise.set(false)
@@ -68,6 +65,7 @@ final class ConceptBackgroundKeepAlive {
                 Queue.mainQueue().async {
                     guard let self, self.enabled, self.generation == generation else { return }
                     self.ownsAudio = true
+                    self.startWatchdog()
                     self.startPlayer()
                 }
             }, deactivate: { [weak self] _ in
@@ -75,6 +73,10 @@ final class ConceptBackgroundKeepAlive {
                     Queue.mainQueue().async {
                         if let self, self.generation == generation {
                             self.ownsAudio = false
+                            self.watchdog?.cancel()
+                            self.watchdog = nil
+                            self.recovery?.cancel()
+                            self.recovery = nil
                             self.player?.stop()
                             self.player = nil
                             self.activePromise.set(false)
@@ -88,15 +90,85 @@ final class ConceptBackgroundKeepAlive {
     }
 
     private func startPlayer() {
-        guard let url = self.silenceURL ?? self.makeSilenceFile() else { return }
+        guard self.enabled, self.ownsAudio, BackgroundNotificationSettings.isEnabled,
+              UIApplication.shared.applicationState == .background else { return }
+        guard self.player?.isPlaying != true else { return }
+        guard let url = self.silenceURL ?? self.makeSilenceFile(),
+              let player = try? AVAudioPlayer(contentsOf: url) else { self.scheduleRecovery(); return }
         self.silenceURL = url
-        guard let player = try? AVAudioPlayer(contentsOf: url) else { return }
+        player.delegate = self
         player.numberOfLoops = -1
         player.volume = 1.0
-        guard player.prepareToPlay(), player.play() else { return }
+        guard player.prepareToPlay(), player.play() else { self.scheduleRecovery(); return }
         self.player = player
+        self.recoveryAttempt = 0
         self.activePromise.set(true)
         self.wakeupManager?.allowBackgroundTimeExtension(timeout: 30.0, extendNow: true)
+    }
+
+    private func startWatchdog() {
+        guard self.watchdog == nil else { return }
+        let generation = self.generation
+        let watchdog = DispatchSource.makeTimerSource(queue: .main)
+        // Safety net for an unreported player stop, not a network/read-state poll.
+        // Coalesce this infrequent check with other system work where possible.
+        watchdog.schedule(deadline: .now() + 60.0, repeating: 60.0, leeway: .seconds(15))
+        watchdog.setEventHandler { [weak self] in
+            guard let self, self.generation == generation else { return }
+            self.checkPlayback()
+        }
+        self.watchdog = watchdog
+        watchdog.resume()
+    }
+
+    private func checkPlayback() {
+        guard self.enabled else { return }
+        guard BackgroundNotificationSettings.isEnabled, UIApplication.shared.applicationState == .background else {
+            self.stop()
+            return
+        }
+        if self.ownsAudio, self.player?.isPlaying != true, self.recovery == nil {
+            self.scheduleRecovery()
+        }
+    }
+
+    private func scheduleRecovery() {
+        guard self.enabled, self.ownsAudio, self.recovery == nil else { return }
+        self.activePromise.set(false)
+        guard self.recoveryAttempt < 3 else {
+            self.ownsAudio = false
+            self.watchdog?.cancel()
+            self.watchdog = nil
+            self.audioLease?.dispose()
+            self.audioLease = nil
+            return
+        }
+        self.recoveryAttempt += 1
+        let generation = self.generation
+        let recovery = DispatchWorkItem { [weak self] in
+            guard let self, self.generation == generation else { return }
+            self.recovery = nil
+            self.startPlayer()
+        }
+        self.recovery = recovery
+        Queue.mainQueue().after(Double(self.recoveryAttempt) * 15.0) { recovery.perform() }
+    }
+
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        self.handlePlayerStopped(player)
+    }
+
+    func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        self.handlePlayerStopped(player)
+    }
+
+    private func handlePlayerStopped(_ player: AVAudioPlayer) {
+        Queue.mainQueue().async { [weak self, weak player] in
+            guard let self, let player, self.player === player else { return }
+            self.player = nil
+            self.activePromise.set(false)
+            self.scheduleRecovery()
+        }
     }
 
     private func makeSilenceFile() -> URL? {

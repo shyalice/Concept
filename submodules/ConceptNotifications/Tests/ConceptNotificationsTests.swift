@@ -4,6 +4,20 @@ import SwiftSignalKit
 @testable import ConceptNotifications
 
 final class ConceptNotificationsTests: XCTestCase {
+    func testBackgroundSwitchImmediatelyPublishesDisableAndDisposesObserver() {
+        let previous = BackgroundNotificationSettings.isEnabled
+        defer { BackgroundNotificationSettings.isEnabled = previous }
+        BackgroundNotificationSettings.isEnabled = true
+        var values: [Bool] = []
+        let disposable = BackgroundNotificationSettings.enabledSignal.start(next: { values.append($0) })
+        BackgroundNotificationSettings.isEnabled = false
+        BackgroundNotificationSettings.isEnabled = false
+        XCTAssertEqual(values, [true, false])
+        disposable.dispose()
+        BackgroundNotificationSettings.isEnabled = true
+        XCTAssertEqual(values, [true, false])
+    }
+
     func testExactlyOnceCallbackAcrossConcurrentTimeouts() {
         let lock = NSLock()
         var values: [Int] = []

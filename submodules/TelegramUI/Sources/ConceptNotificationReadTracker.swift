@@ -13,32 +13,20 @@ final class ConceptNotificationReadTracker {
     private let blockedObservation = MetaDisposable()
     private var authorRequests: [EnginePeer.Id: Set<String>] = [:]
     private var requests: [String: LocalNotificationRoute] = [:]
-    private var generation = 0
     private var readIdentifiers = Set<String>()
 
     init(account: AccountContext) {
         self.account = account
-        self.refresh()
     }
 
-    func refresh() {
-        self.generation += 1
-        let generation = self.generation
-        let center = UNUserNotificationCenter.current()
-        center.getDeliveredNotifications { [weak self] delivered in
-            center.getPendingNotificationRequests { pending in
-                Queue.mainQueue().async {
-                    guard let self, self.generation == generation else { return }
-                    var requests: [String: LocalNotificationRoute] = [:]
-                    for request in delivered.map(\.request) + pending {
-                        if let route = LocalNotificationRoute(userInfo: request.content.userInfo), route.accountId == self.account.account.id.int64 {
-                            requests[request.identifier] = route
-                        }
-                    }
-                    self.observe(requests)
-                }
+    func reconcile(_ notificationRequests: [UNNotificationRequest]) {
+        var requests: [String: LocalNotificationRoute] = [:]
+        for request in notificationRequests {
+            if let route = LocalNotificationRoute(userInfo: request.content.userInfo), route.accountId == self.account.account.id.int64 {
+                requests[request.identifier] = route
             }
         }
+        self.observe(requests)
     }
 
     private func observe(_ requests: [String: LocalNotificationRoute]) {

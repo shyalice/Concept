@@ -301,6 +301,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     private var pushRegistry: PKPushRegistry?
     private var backgroundNotificationRefresh: BackgroundNotificationRefresh?
     private let conceptBackgroundKeepAlive = ConceptBackgroundKeepAlive()
+    private let conceptBackgroundObservation = MetaDisposable()
+    private var conceptBackgroundGeneration = 0
+    private var conceptBackgroundSettingsObserver: NSObjectProtocol?
 
     private lazy var notificationAuthorization = NotificationAuthorizationCoordinator(
         read: { completion in
@@ -390,6 +393,22 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         NotificationRegistrationDiagnostics.beginSession()
+        self.conceptBackgroundSettingsObserver = NotificationCenter.default.addObserver(forName: BackgroundNotificationSettings.changed, object: nil, queue: .main) { [weak self] _ in
+            guard let self else { return }
+            if !BackgroundNotificationSettings.isEnabled {
+                self.stopConceptBackgroundKeepAlive()
+                let center = UNUserNotificationCenter.current()
+                center.getPendingNotificationRequests { requests in
+                    Queue.mainQueue().async {
+                        guard !BackgroundNotificationSettings.isEnabled else { return }
+                        let localIds = requests.filter { $0.identifier.hasPrefix("concept_local_") }.map(\.identifier)
+                        center.removePendingNotificationRequests(withIdentifiers: localIds)
+                    }
+                }
+            } else if UIApplication.shared.applicationState == .background {
+                self.startConceptBackgroundKeepAlive()
+            }
+        }
         self.backgroundNotificationRefresh = BackgroundNotificationRefresh(identifier: "\(Bundle.main.bundleIdentifier ?? "kill.myself.Concept").refresh", perform: { [weak self] completion in
             guard let self else { completion(false); return EmptyDisposable }
             return (self.sharedContextPromise.get() |> take(1) |> deliverOnMainQueue |> mapToSignal { runBackgroundNotificationRefresh(context: $0) } |> take(1)).start(next: completion, completed: {})
@@ -2276,41 +2295,42 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
 
     private func startConceptBackgroundKeepAlive() {
-        guard BackgroundNotificationSettings.isEnabled else {
-            self.stopConceptBackgroundKeepAlive()
-            return
-        }
+        self.stopConceptBackgroundKeepAlive()
+        guard BackgroundNotificationSettings.isEnabled, UIApplication.shared.applicationState == .background else { return }
+        let generation = self.conceptBackgroundGeneration
         UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
             Queue.mainQueue().async {
-                guard let self, BackgroundNotificationSettings.isEnabled else {
-                    return
-                }
+                guard let self, self.conceptBackgroundGeneration == generation,
+                      BackgroundNotificationSettings.isEnabled, UIApplication.shared.applicationState == .background else { return }
                 switch settings.authorizationStatus {
-                case .authorized, .provisional, .ephemeral:
-                    break
-                default:
-                    return
+                case .authorized, .provisional, .ephemeral: break
+                default: return
                 }
-                let _ = (self.sharedContextPromise.get()
+                self.conceptBackgroundObservation.set((self.sharedContextPromise.get()
                 |> take(1)
-                |> deliverOnMainQueue).start(next: { [weak self] sharedApplicationContext in
-                    guard let self, BackgroundNotificationSettings.isEnabled else {
-                        return
+                |> deliverOnMainQueue
+                |> mapToSignal { sharedApplicationContext in
+                    combineLatest(queue: .mainQueue(), sharedApplicationContext.sharedContext.activeAccountContexts,
+                        sharedApplicationContext.sharedContext.conceptSecretPasscodes)
+                    |> map { ($0, $1, sharedApplicationContext) }
+                }).start(next: { [weak self] accounts, rawSecrets, shared in
+                    guard let self, self.conceptBackgroundGeneration == generation,
+                          BackgroundNotificationSettings.isEnabled, UIApplication.shared.applicationState == .background else { return }
+                    let secrets = rawSecrets.withCheckedTimeoutUsingLockStateFile(rootPath: shared.sharedContext.basePath)
+                    let hasEligibleAccount = accounts.accounts.contains { !secrets.inactiveAccountIds().contains($0.0) }
+                    if hasEligibleAccount {
+                        self.conceptBackgroundKeepAlive.start(wakeupManager: shared.wakeupManager)
+                    } else {
+                        self.conceptBackgroundKeepAlive.stop()
                     }
-                    let _ = (sharedApplicationContext.sharedContext.activeAccountContexts
-                    |> take(1)
-                    |> deliverOnMainQueue).start(next: { [weak self] accounts in
-                        guard let self, BackgroundNotificationSettings.isEnabled, !accounts.accounts.isEmpty, UIApplication.shared.applicationState != .active else {
-                            return
-                        }
-                        self.conceptBackgroundKeepAlive.start(wakeupManager: sharedApplicationContext.wakeupManager)
-                    })
-                })
+                }))
             }
         }
     }
 
     private func stopConceptBackgroundKeepAlive() {
+        self.conceptBackgroundGeneration += 1
+        self.conceptBackgroundObservation.set(nil)
         self.conceptBackgroundKeepAlive.stop()
     }
 
@@ -2392,6 +2412,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
     
     func applicationWillTerminate(_ application: UIApplication) {
+        self.stopConceptBackgroundKeepAlive()
+        if let observer = self.conceptBackgroundSettingsObserver { NotificationCenter.default.removeObserver(observer) }
+        self.conceptBackgroundSettingsObserver = nil
         Logger.shared.log("App \(self.episodeId)", "terminating")
     }
     

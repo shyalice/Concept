@@ -1,0 +1,145 @@
+import XCTest
+import Foundation
+import SwiftSignalKit
+@testable import ConceptNotifications
+
+private final class UIApplication {
+    enum State { case active, background }
+    static let shared = UIApplication()
+    var applicationState = State.background
+}
+private protocol AVAudioPlayerDelegate: AnyObject {}
+private final class AVAudioPlayer: NSObject {
+    static var plays = 0
+    static var stops = 0
+    static var canPlay = true
+    static weak var last: AVAudioPlayer?
+    weak var delegate: AVAudioPlayerDelegate?
+    var isPlaying = false
+    var numberOfLoops = 0
+    var volume = 1.0
+    init(contentsOf: URL) throws { super.init(); Self.last = self }
+    func prepareToPlay() -> Bool { true }
+    func play() -> Bool { Self.plays += 1; isPlaying = Self.canPlay; return isPlaying }
+    func stop() { Self.stops += 1; isPlaying = false }
+}
+private final class TestAudioSession {
+    enum AudioType { case play(mixWithOthers: Bool) }
+    var activations: [(Int) -> Void] = []
+    var deactivations: [(Int) -> Signal<Void, NoError>] = []
+    var releases = 0
+    func isActive() -> Signal<Bool, NoError> { .single(false) }
+    func push(audioSessionType: AudioType, once: Bool, activate: @escaping (Int) -> Void, deactivate: @escaping (Int) -> Signal<Void, NoError>) -> Disposable {
+        activations.append(activate); deactivations.append(deactivate)
+        return ActionDisposable { [weak self] in self?.releases += 1 }
+    }
+}
+private enum MediaManagerImpl { static var globalAudioSession = TestAudioSession() }
+private final class SharedWakeupManager {
+    var extensions = 0
+    func allowBackgroundTimeExtension(timeout: Double, extendNow: Bool) { extensions += 1 }
+}
+
+
+// INSERT_PRODUCTION_KEEPALIVE
+
+private extension ConceptBackgroundKeepAlive {
+    func runWatchdogForTesting() { self.checkPlayback() }
+    func performRecoveryForTesting() { self.recovery?.perform() }
+}
+final class KeepAliveLifecycleTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        AVAudioPlayer.canPlay = true
+    }
+    private func drain() { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02)) }
+    func testOffAndForegroundCannotAcquireAudio() {
+        let saved = BackgroundNotificationSettings.isEnabled
+        defer { BackgroundNotificationSettings.isEnabled = saved; UIApplication.shared.applicationState = .background }
+        MediaManagerImpl.globalAudioSession = TestAudioSession()
+        let service = ConceptBackgroundKeepAlive(); let wakeup = SharedWakeupManager()
+        BackgroundNotificationSettings.isEnabled = false
+        service.start(wakeupManager:wakeup); drain()
+        XCTAssertTrue(MediaManagerImpl.globalAudioSession.activations.isEmpty)
+        BackgroundNotificationSettings.isEnabled = true
+        UIApplication.shared.applicationState = .active
+        service.start(wakeupManager:wakeup); drain()
+        XCTAssertTrue(MediaManagerImpl.globalAudioSession.activations.isEmpty)
+        service.stop()
+    }
+    func testStopRejectsDelayedActivationAndReleasesLease() {
+        let saved = BackgroundNotificationSettings.isEnabled
+        defer { BackgroundNotificationSettings.isEnabled = saved }
+        BackgroundNotificationSettings.isEnabled = true
+        UIApplication.shared.applicationState = .background
+        MediaManagerImpl.globalAudioSession = TestAudioSession(); AVAudioPlayer.plays = 0
+        let service = ConceptBackgroundKeepAlive(); let wakeup = SharedWakeupManager()
+        service.start(wakeupManager:wakeup); drain()
+        XCTAssertEqual(MediaManagerImpl.globalAudioSession.activations.count,1)
+        service.stop()
+        MediaManagerImpl.globalAudioSession.activations[0](0); drain()
+        XCTAssertEqual(AVAudioPlayer.plays,0)
+        XCTAssertEqual(MediaManagerImpl.globalAudioSession.releases,1)
+        XCTAssertEqual(wakeup.extensions,0)
+    }
+    func testLoopStartsOnceStopsAndYieldsOnAudioInterruption() {
+        let saved = BackgroundNotificationSettings.isEnabled
+        defer { BackgroundNotificationSettings.isEnabled = saved }
+        BackgroundNotificationSettings.isEnabled = true
+        UIApplication.shared.applicationState = .background
+        MediaManagerImpl.globalAudioSession = TestAudioSession(); AVAudioPlayer.plays = 0; AVAudioPlayer.stops = 0
+        let service = ConceptBackgroundKeepAlive(); let wakeup = SharedWakeupManager()
+        var active:[Bool] = []
+        let observation = service.isRunning.start(next:{active.append($0)})
+        service.start(wakeupManager:wakeup); drain()
+        MediaManagerImpl.globalAudioSession.activations[0](0); drain()
+        MediaManagerImpl.globalAudioSession.activations[0](0); drain()
+        XCTAssertEqual(AVAudioPlayer.plays,1); XCTAssertEqual(active.last,true)
+        XCTAssertEqual(wakeup.extensions,1)
+        let interruption = MediaManagerImpl.globalAudioSession.deactivations[0](0).start(); drain()
+        XCTAssertEqual(AVAudioPlayer.stops,1); XCTAssertEqual(active.last,false)
+        MediaManagerImpl.globalAudioSession.activations[0](0); drain()
+        XCTAssertEqual(AVAudioPlayer.plays,2); XCTAssertEqual(active.last,true)
+        service.stop(); observation.dispose(); interruption.dispose()
+        XCTAssertEqual(MediaManagerImpl.globalAudioSession.releases,1)
+    }
+
+    func testWatchdogFindsUnreportedStopAndStopsWhenDisabled() {
+        let saved = BackgroundNotificationSettings.isEnabled
+        defer { BackgroundNotificationSettings.isEnabled = saved }
+        BackgroundNotificationSettings.isEnabled = true
+        UIApplication.shared.applicationState = .background
+        MediaManagerImpl.globalAudioSession = TestAudioSession()
+        let service = ConceptBackgroundKeepAlive(); let wakeup = SharedWakeupManager()
+        var active: [Bool] = []
+        let observation = service.isRunning.start(next: { active.append($0) })
+        service.start(wakeupManager: wakeup); drain()
+        MediaManagerImpl.globalAudioSession.activations[0](0); drain()
+        XCTAssertEqual(active.last, true)
+        AVAudioPlayer.last?.isPlaying = false
+        service.runWatchdogForTesting()
+        XCTAssertEqual(active.last, false)
+        BackgroundNotificationSettings.isEnabled = false
+        service.runWatchdogForTesting()
+        XCTAssertEqual(MediaManagerImpl.globalAudioSession.releases, 1)
+        service.performRecoveryForTesting()
+        XCTAssertEqual(active.last, false)
+        service.stop(); observation.dispose()
+    }
+    func testRepeatedPlaybackFailuresReleaseAudioInsteadOfRetryingForever() {
+        let saved = BackgroundNotificationSettings.isEnabled
+        defer { BackgroundNotificationSettings.isEnabled = saved }
+        BackgroundNotificationSettings.isEnabled = true
+        UIApplication.shared.applicationState = .background
+        MediaManagerImpl.globalAudioSession = TestAudioSession()
+        AVAudioPlayer.canPlay = false; AVAudioPlayer.plays = 0
+        let service = ConceptBackgroundKeepAlive(); let wakeup = SharedWakeupManager()
+        service.start(wakeupManager: wakeup); drain()
+        MediaManagerImpl.globalAudioSession.activations[0](0); drain()
+        for _ in 0..<6 { service.performRecoveryForTesting(); service.runWatchdogForTesting() }
+        XCTAssertEqual(AVAudioPlayer.plays, 4)
+        XCTAssertEqual(MediaManagerImpl.globalAudioSession.releases, 1)
+        XCTAssertEqual(wakeup.extensions, 0)
+        service.stop()
+    }
+}
