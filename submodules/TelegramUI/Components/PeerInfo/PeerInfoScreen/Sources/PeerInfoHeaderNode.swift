@@ -98,6 +98,9 @@ final class PeerInfoHeaderNode: ASDisplayNode {
     private weak var controller: PeerInfoScreenImpl?
     private var presentationData: PresentationData?
     private var state: PeerInfoState?
+    private var editingContentTransitionGeneration = 0
+    private var retainsOutgoingEditingContent = false
+    private var editingContentLayoutHeight: CGFloat = 0.0
     private var peer: EnginePeer?
     private var threadData: MessageHistoryThreadData?
     private var isSearching: Bool = false
@@ -637,6 +640,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             peer = .user(user.withUpdatedEmojiStatus(nil))
         }
         
+        let wasEditing = self.state?.isEditing ?? false
         self.state = state
         self.peer = peer
         self.threadData = threadData
@@ -696,7 +700,9 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             backgroundCoverSubject = nil
         }
         
-        let currentSavedMusic = self.profileMusic(peer: peer, screenData: screenData)
+        // The stock editor has no music strip. Dispose it on entry so return
+        // builds a fresh glass control, with no hidden/reused effect hierarchy.
+        let currentSavedMusic = state.isEditing ? nil : self.profileMusic(peer: peer, screenData: screenData)
         let currentWalletBalance: Int64?
         if !self.isSettings, let balance = (screenData?.cachedData as? CachedUserData)?.walletCard?.balance, balance >= 100_000_000 {
             currentWalletBalance = balance
@@ -747,10 +753,32 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         transition.updateAlpha(node: self.regularContentNode, alpha: (state.isEditing || self.customNavigationContentNode != nil) ? 0.0 : 1.0)
         self.updateNavigationRowHidden?(self.customNavigationContentNode != nil || isSearching, transition)
         
-        self.editingContentNode.alpha = state.isEditing ? 1.0 : 0.0
-        
-        let editingContentHeight = self.editingContentNode.update(width: width, leftInset: sideInsets.sectionLeft, rightInset: sideInsets.sectionRight, statusBarHeight: statusBarHeight, navigationHeight: navigationHeight, presentedInFormSheet: presentedInFormSheet, peer: state.isEditing ? peer : nil, threadData: threadData, chatLocation: self.chatLocation, cachedData: cachedData, isContact: isContact, isSettings: isSettings || isMyProfile, presentationData: presentationData, transition: transition)
-        transition.updateFrame(node: self.editingContentNode, frame: CGRect(origin: CGPoint(x: 0.0, y: -contentOffset), size: CGSize(width: width, height: editingContentHeight)))
+        if !self.isSettings {
+            if wasEditing != state.isEditing {
+                self.editingContentTransitionGeneration += 1
+                self.retainsOutgoingEditingContent = !state.isEditing && transition.isAnimated
+                if state.isEditing {
+                    // A cancelled draft must not survive a rapid return to Edit.
+                    for node in self.editingContentNode.itemNodes.values { node.removeFromSupernode() }
+                    self.editingContentNode.itemNodes.removeAll()
+                }
+                let generation = self.editingContentTransitionGeneration
+                transition.updateAlpha(node: self.editingContentNode, alpha: state.isEditing ? 1.0 : 0.0, completion: { [weak self] _ in
+                    guard let self, self.editingContentTransitionGeneration == generation, self.retainsOutgoingEditingContent else { return }
+                    self.retainsOutgoingEditingContent = false
+                    self.requestUpdateLayout?(false)
+                })
+            } else if !self.retainsOutgoingEditingContent {
+                transition.updateAlpha(node: self.editingContentNode, alpha: state.isEditing ? 1.0 : 0.0)
+            }
+        } else {
+            self.editingContentNode.alpha = state.isEditing ? 1.0 : 0.0
+        }
+        if !self.retainsOutgoingEditingContent {
+            self.editingContentLayoutHeight = self.editingContentNode.update(width: width, leftInset: sideInsets.sectionLeft, rightInset: sideInsets.sectionRight, statusBarHeight: statusBarHeight, navigationHeight: navigationHeight, presentedInFormSheet: presentedInFormSheet, peer: state.isEditing ? peer : nil, threadData: threadData, chatLocation: self.chatLocation, cachedData: cachedData, isContact: isContact, isSettings: isSettings || isMyProfile, presentationData: presentationData, transition: transition)
+            transition.updateFrame(node: self.editingContentNode, frame: CGRect(origin: CGPoint(x: 0.0, y: -contentOffset), size: CGSize(width: width, height: self.editingContentLayoutHeight)))
+        }
+        let editingContentHeight = self.editingContentLayoutHeight
         
         let avatarOverlayFarme = self.editingContentNode.convert(self.editingContentNode.avatarNode.frame, to: self)
         transition.updateFrame(node: self.avatarOverlayNode, frame: avatarOverlayFarme)
@@ -2000,7 +2028,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         } else if self.avatarListNode.listContainerNode.cornerRadius != avatarCornerRadius {
             transition.updateCornerRadius(node: self.avatarListNode.listContainerNode.controlsClippingNode, cornerRadius: avatarCornerRadius)
             transition.updateCornerRadius(node: self.avatarListNode.listContainerNode, cornerRadius: avatarCornerRadius, completion: { [weak self] _ in
-                guard let strongSelf = self else {
+                guard let strongSelf = self, !strongSelf.isAvatarExpanded else {
                     return
                 }
                 strongSelf.avatarListNode.avatarContainerNode.canAttachVideo = true
@@ -2849,11 +2877,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                         action: { [weak self] in self?.displaySavedMusic?() }, animateAlpha: false,
                         animateScale: true, rasterizeOnScaleAnimation: false, accessibility: musicAccessibility))
                 }
-                // ComponentView retains its concrete root view. Keep that type stable when
-                // entering/leaving stock editing; replace the button through child identity.
-                let musicSize = music.update(transition: .immediate, component: AnyComponent(HStack([
-                    AnyComponentWithIdentity(id: usesProfileSurface ? "glass" : "plain", component: musicComponent)
-                ], spacing: 0.0)), environment: {},
+                let musicSize = music.update(transition: .immediate, component: musicComponent, environment: {},
                     containerSize: CGSize(width: musicBandWidth, height: musicHeight))
                 let musicFrame = CGRect(origin: CGPoint(x: usesProfileSurface ? stripLeft + floorToScreenPixels((musicBandWidth - musicSize.width) * 0.5) : stripLeft, y: apparentBackgroundHeight - musicHeight - (usesProfileSurface ? 8.0 : (hasBackground || self.isAvatarExpanded ? 0.0 : 4.0)) + 1.0 - UIScreenPixel), size: musicSize)
                 if let musicView = music.view {
@@ -2862,7 +2886,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                         // A newly loaded strip item fades in at its final position.
                         ContainedViewLayoutTransition.immediate.updateFrame(view: musicView, frame: musicFrame)
                         self.regularContentNode.view.addSubview(musicView)
-                        if transition.isAnimated {
+                        if transition.isAnimated && !usesProfileSurface {
                             musicView.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2)
                         }
                     } else if additive {
@@ -2871,7 +2895,8 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                         musicTransition.updateFrame(view: musicView, frame: musicFrame)
                     }
 
-                    ContainedViewLayoutTransition.animated(duration: 0.2, curve: .easeInOut).updateAlpha(layer: musicView.layer, alpha: backgroundBannerAlpha)
+                    let appearanceTransition: ContainedViewLayoutTransition = usesProfileSurface ? musicTransition : .animated(duration: 0.2, curve: .easeInOut)
+                    appearanceTransition.updateAlpha(layer: musicView.layer, alpha: backgroundBannerAlpha)
                 }
             }
         } else {
@@ -3057,10 +3082,10 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         return result
     }
     
-    func updateIsAvatarExpanded(_ isAvatarExpanded: Bool, transition: ContainedViewLayoutTransition) {
+    func updateIsAvatarExpanded(_ isAvatarExpanded: Bool, transition: ContainedViewLayoutTransition, resetGallery: Bool = true) {
         if self.isAvatarExpanded != isAvatarExpanded {
             self.isAvatarExpanded = isAvatarExpanded
-            if isAvatarExpanded {
+            if isAvatarExpanded && resetGallery {
                 self.avatarListNode.listContainerNode.selectFirstItem()
             }
             if case .animated = transition, !isAvatarExpanded {

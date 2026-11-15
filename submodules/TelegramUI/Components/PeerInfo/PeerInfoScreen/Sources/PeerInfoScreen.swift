@@ -2253,12 +2253,16 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                         strongSelf.performNavigationButtonAction?(.cancel, nil, nil)
                     }
                 } else {
-                    strongSelf.state = strongSelf.state.withIsEditing(false).withUpdatingBio(nil).withUpdatingBirthDate(nil).withIsEditingBirthDate(false).withUpdatingNote(nil)
-                    if let (layout, navigationHeight) = strongSelf.validLayout {
-                        strongSelf.scrollNode.view.setContentOffset(CGPoint(), animated: false)
-                        strongSelf.containerLayoutUpdated(layout: layout, navigationHeight: navigationHeight, transition: .immediate, additive: false)
+                    if !strongSelf.isSettings {
+                        strongSelf.updateProfileEditing(false)
+                    } else {
+                        strongSelf.state = strongSelf.state.withIsEditing(false).withUpdatingBio(nil).withUpdatingBirthDate(nil).withIsEditingBirthDate(false).withUpdatingNote(nil)
+                        if let (layout, navigationHeight) = strongSelf.validLayout {
+                            strongSelf.scrollNode.view.setContentOffset(CGPoint(), animated: false)
+                            strongSelf.containerLayoutUpdated(layout: layout, navigationHeight: navigationHeight, transition: .immediate, additive: false)
+                        }
+                        strongSelf.crossDissolveContentExceptNavigationBar()
                     }
-                    strongSelf.crossDissolveContentExceptNavigationBar()
                 }
                 (strongSelf.controller?.parent as? TabBarController)?.updateIsTabBarHidden(SGSimpleSettings.shared.hideTabBar, transition: .animated(duration: 0.3, curve: .linear)) // MARK: Swiftgram
             case .select:
@@ -2940,9 +2944,52 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
     }
         
     var canAttachVideo: Bool?
+    private var profileBeforeEditing: (expanded: Bool, contentOffset: CGPoint)?
+
+    private func updateProfileEditing(_ editing: Bool) {
+        guard self.state.isEditing != editing else { return }
+        let previousOffset = self.scrollNode.layer.presentation()?.bounds.origin ?? self.scrollNode.view.contentOffset
+        let targetOffset: CGPoint
+        let expanded: Bool
+        if editing {
+            self.profileBeforeEditing = (self.headerNode.isAvatarExpanded, self.scrollNode.view.contentOffset)
+            targetOffset = .zero
+            expanded = false
+        } else {
+            targetOffset = self.profileBeforeEditing?.contentOffset ?? .zero
+            expanded = self.profileBeforeEditing?.expanded ?? false
+            self.profileBeforeEditing = nil
+        }
+        let transition: ContainedViewLayoutTransition = UIAccessibility.isReduceMotionEnabled
+            ? .immediate : .animated(duration: 0.3, curve: .easeInOut)
+        if editing {
+            self.state = self.state.withIsEditing(true)
+        } else {
+            self.state = self.state.withIsEditing(false).withUpdatingBio(nil).withUpdatingBirthDate(nil).withIsEditingBirthDate(false).withUpdatingNote(nil)
+        }
+        self.headerNode.updateIsAvatarExpanded(expanded, transition: transition, resetGallery: false)
+        self.headerNode.regularContentNode.isUserInteractionEnabled = !editing
+        self.headerNode.editingContentNode.isUserInteractionEnabled = editing
+        self.paneContainerNode.isUserInteractionEnabled = !editing
+        self.conceptAppliedPaletteKeys.removeAll()
+        self.ignoreScrolling = true
+        self.scrollNode.view.setContentOffset(targetOffset, animated: false)
+        if let (layout, navigationHeight) = self.validLayout {
+            self.containerLayoutUpdated(layout: layout, navigationHeight: navigationHeight, transition: transition, additive: false)
+        }
+        self.ignoreScrolling = false
+        // The scroll model moves once. Its presentation follows the same curve as
+        // the header/rows instead of firing an independent UIScrollView animation.
+        transition.animateOffsetAdditive(node: self.scrollNode, offset: previousOffset.y - self.scrollNode.view.contentOffset.y)
+    }
     
     func activateEdit() {
+        guard !self.state.isEditing else { return }
         (self.controller?.parent as? TabBarController)?.updateIsTabBarHidden(true, transition: .animated(duration: 0.3, curve: .linear))
+        if !self.isSettings {
+            self.updateProfileEditing(true)
+            return
+        }
         self.state = self.state.withIsEditing(true)
         var updateOnCompletion = false
         if self.headerNode.isAvatarExpanded {
@@ -5906,6 +5953,15 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                     self.scrollNode.insertSubnode(sectionNode, belowSubnode: self.paneContainerNode)
                     wasAdded = true
                 }
+
+                // These are separate from editingSections. Keep their native
+                // material and geometry alive while the stock editor is visible.
+                if self.state.isEditing && !self.isSettings {
+                    sectionNode.isUserInteractionEnabled = false
+                    (wasAdded ? ContainedViewLayoutTransition.immediate : transition).updateAlpha(node: sectionNode, alpha: 0.0)
+                    continue
+                }
+                sectionNode.isUserInteractionEnabled = !self.state.isEditing
                 
                 if wasAdded && transition.isAnimated && (self.isSettings || self.isMyProfile) && !self.state.isEditing && !self.conceptGlassEnabled {
                     sectionNode.alpha = 0.0
@@ -5969,6 +6025,13 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                 insets.right += sideInsets.sectionRight
 
                 validEditingSections.append(sectionId)
+                if !self.state.isEditing && !self.isSettings {
+                    if let section = self.editingSections[sectionId] {
+                        section.isUserInteractionEnabled = false
+                        transition.updateAlpha(node: section, alpha: 0.0)
+                    }
+                    continue
+                }
                 
                 var wasAdded = false
                 let sectionNode: PeerInfoScreenItemSectionContainerNode
@@ -5980,6 +6043,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                     self.editingSections[sectionId] = sectionNode
                     self.scrollNode.insertSubnode(sectionNode, belowSubnode: self.paneContainerNode)
                 }
+                sectionNode.isUserInteractionEnabled = self.state.isEditing
                 
                 let sectionWidth = layout.size.width - insets.left - insets.right
                 let sectionHeight = sectionNode.update(context: self.context, width: sectionWidth, safeInsets: UIEdgeInsets(), hasCorners: !insets.left.isZero, presentationData: self.presentationData, items: sectionItems, transition: transition)

@@ -120,3 +120,31 @@ HStack, with distinct child identities for glass and stock buttons, so entry and
 correct concrete button view. Existing editing sections and `usesProfileSurface == false` continue
 using ordinary presentation data. Settings → Edit does not enter from a glass music root.
 The real My Profile → Edit → Cancel/Done transition still needs a device run after installing the fix.
+
+## Edit round trip after build 24
+
+The profile now owns one live 0.3-second ease-in/out transition for Edit entry and exit. It does not
+run `UIView.transition` over the profile's native material hierarchy. The already working Settings
+editing path keeps its existing transition. Profile entry captures expansion and scroll position;
+Cancel and successful Done restore them without resetting the selected avatar. A scroll-layer offset
+compensates the single model-offset change using the same transition curve. Late avatar-collapse
+completion cannot hide an avatar that has already expanded again.
+
+Regular profile sections retain their glass material and frames while editing sections are shown;
+they are not restyled as stock rows and then rebuilt on return. Outgoing editing sections keep their
+positions as they fade, and the header retains its outgoing text fields until its fade completes.
+Generation checks reject an old fade completion after a rapid return to Edit. Hidden sections do not
+receive taps. New Edit sessions reset cancelled header fields from the current peer data.
+
+The stock editor has no music strip. Music is disposed on entry and recreated as a native glass
+button on return, rather than switching a retained button hierarchy between glass and plain roots.
+Its appearance follows the profile's transition, with no separate trailing fade on each scroll update.
+Card material tint, shape and normal avatar geometry are unchanged.
+
+`python3 tools/test_profile_edit_lifecycle.py` extracts the production transition method into external
+host scratch storage and checks expanded/scrolled restoration, repeated/duplicate actions, rapid
+cycles, selected-avatar preservation, reduced motion, missing layout and presentation-offset handoff
+with platform doubles. It does not validate rendering. Required device frames still cover Edit →
+Cancel and Edit → Done, music, card corners, keyboard open/closed and rapid reversal in both themes:
+expect no black corner wedges, stale plain music, resetting gallery, teleported rows or delayed plate.
+The VM remains unavailable and no XcodeBuildMCP tools are exposed, so those frames are outstanding.
