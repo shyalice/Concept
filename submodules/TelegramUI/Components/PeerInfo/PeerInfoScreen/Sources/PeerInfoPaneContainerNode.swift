@@ -608,6 +608,15 @@ final class PeerInfoPaneContainerNode: ASDisplayNode, ASGestureRecognizerDelegat
     private let tabsBackgroundContainer: UIView
     private let tabsBackgroundView: GlassBackgroundView
     var profileSurface: (color: UIColor, isDark: Bool)?
+    var profileMaterial: (tintColor: UIColor, targetColor: UIColor, fraction: CGFloat, isDark: Bool)? {
+        didSet { self.updateMembersMaterial() }
+    }
+
+    private func updateMembersMaterial() {
+        let nodes = Array(self.currentPanes.values) + self.pendingPanes.values.map { $0.pane }
+        for pane in nodes { (pane.node as? PeerInfoMembersPaneNode)?.updateProfileMaterial(self.profileMaterial) }
+    }
+
     private let tabsContainer = ComponentView<Empty>()
     private var didJustReorderTabs = false
     
@@ -1452,6 +1461,8 @@ final class PeerInfoPaneContainerNode: ASDisplayNode, ASGestureRecognizerDelegat
             pane.pane.update(size: paneFrame.size, topInset: effectiveTabsHeight + topInset, sideInset: sideInset, bottomInset: bottomInset, deviceMetrics: deviceMetrics, visibleHeight: visibleHeight, isScrollingLockedAtTop: isScrollingLockedAtTop, expandProgress: expansionFraction, navigationHeight: navigationHeight, presentationData: presentationData, synchronous: true, transition: paneTransition)
         }
         
+        self.updateMembersMaterial()
+
         var removeKeys: [PeerInfoPaneKey] = []
         for (key, paneNode) in self.pendingPanes {
             if !availablePanes.contains(key) && self.pendingSwitchToPaneKey != key {

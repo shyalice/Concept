@@ -278,12 +278,12 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
     
     let headerNode: PeerInfoHeaderNode
     let conceptBackdrop = ConceptProfileBackdropView()
-    private let conceptSharpPhotoMask = CAGradientLayer()
+    private let conceptSharpPhotoMask = ConceptProfilePhotoFadeMask()
     private weak var conceptMaskedPhotoView: UIView?
     private weak var conceptObservedPhotoItem: PeerInfoAvatarListItemNode?
     private var conceptSurfaceThemeSource: PresentationData?
     private var conceptSurfaceThemes: [Int: (rows: PresentationData, panes: PresentationData)] = [:]
-    private var conceptAppliedPaletteKey: Int?
+    private var conceptAppliedPaletteKeys: [AnyHashable: Int] = [:]
     private var conceptAccessibilityObserver: NSObjectProtocol?
 
     private var conceptGlassEnabled: Bool {
@@ -309,7 +309,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
         if self.conceptSurfaceThemeSource !== self.presentationData {
             self.conceptSurfaceThemeSource = self.presentationData
             self.conceptSurfaceThemes.removeAll()
-            self.conceptAppliedPaletteKey = nil
+            self.conceptAppliedPaletteKeys.removeAll()
         }
         let key = self.conceptPaletteKey
         if let cached = self.conceptSurfaceThemes[key] { return decorative ? cached.rows : cached.panes }
@@ -351,13 +351,13 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
             if self.conceptMaskedPhotoView?.layer.mask === self.conceptSharpPhotoMask { self.conceptMaskedPhotoView?.layer.mask = nil }
             self.conceptMaskedPhotoView = photoView
         }
-        if self.conceptGlassEnabled, self.headerNode.isAvatarExpanded, let photoView,
+        if self.conceptGlassEnabled, (self.headerNode.isAvatarExpanded || avatar.listContainerNode.isCollapsing), let photoView,
            photoView.layer.mask == nil || photoView.layer.mask === self.conceptSharpPhotoMask {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             self.conceptSharpPhotoMask.frame = photoView.bounds
-            self.conceptSharpPhotoMask.colors = [UIColor.white.cgColor, UIColor.white.cgColor, UIColor.clear.cgColor]
-            self.conceptSharpPhotoMask.locations = [0.0, 0.60, 1.0]
+            let imageFrame = avatar.listContainerNode.currentItemNode.map { $0.imageNode.view.convert($0.imageNode.view.bounds, to: photoView) }
+            self.conceptSharpPhotoMask.update(size: photoView.bounds.size, photoFrame: imageFrame)
             CATransaction.commit()
             photoView.layer.mask = self.conceptSharpPhotoMask
         } else if photoView?.layer.mask === self.conceptSharpPhotoMask {
@@ -5902,6 +5902,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                 } else {
                     sectionNode = PeerInfoScreenItemSectionContainerNode()
                     self.regularSections[sectionId] = sectionNode
+                    self.conceptAppliedPaletteKeys.removeValue(forKey: sectionId)
                     self.scrollNode.insertSubnode(sectionNode, belowSubnode: self.paneContainerNode)
                     wasAdded = true
                 }
@@ -6294,17 +6295,22 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                 let tintColor = conceptProfileCardTintColor(dominantColor: dominantColor, isDark: isDark)
                 let fraction = self.conceptDecorativeSurface ? self.headerNode.conceptThemeFraction : 1.0
                 let palette = self.conceptSurfaceData(decorative: true)
-                if self.conceptAppliedPaletteKey != self.conceptPaletteKey {
-                    self.conceptAppliedPaletteKey = self.conceptPaletteKey
-                    for section in self.regularSections.values { section.updateAppearance(presentationData: palette) }
+                let paletteKey = self.conceptPaletteKey
+                let visibleBounds = CGRect(origin: .zero, size: layout.size).insetBy(dx: 0.0, dy: -80.0)
+                for (id, section) in self.regularSections where self.conceptAppliedPaletteKeys[id] != paletteKey {
+                    if section.view.convert(section.view.bounds, to: self.view).intersects(visibleBounds) {
+                        section.updateAppearance(presentationData: palette)
+                        self.conceptAppliedPaletteKeys[id] = paletteKey
+                    }
                 }
                 for section in self.regularSections.values {
                     section.updateBackdrop(tintColor: tintColor, targetColor: self.presentationData.theme.list.itemBlocksBackgroundColor, fraction: fraction, isDark: isDark, transition: transition)
                 }
-                let tabsTint = isDark ? UIColor(white: 1.0, alpha: 0.08) : UIColor(white: 1.0, alpha: 0.16)
-                self.paneContainerNode.profileSurface = (tabsTint, isDark)
+                self.paneContainerNode.profileSurface = self.conceptDecorativeSurface && fraction < 1.0 ? (UIColor.clear, true) : nil
+                self.paneContainerNode.profileMaterial = (tintColor, self.presentationData.theme.list.itemBlocksBackgroundColor, fraction, isDark)
             } else {
                 self.paneContainerNode.profileSurface = nil
+                self.paneContainerNode.profileMaterial = nil
             }
 
             let paneAreaExpansionDistance: CGFloat = 32.0

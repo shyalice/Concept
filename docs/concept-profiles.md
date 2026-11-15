@@ -3,7 +3,7 @@
 Profiles retain Telegram's header, gallery, panes, action handlers, context sources and accessible
 labels. The shared backdrop reuses decoded gallery images, computes a bounded blur off-main and
 rejects stale results by generation. Gift covers and photo backgrounds fade toward the application
-theme as the header collapses. Information/music sections use rounded translucent content material;
+theme as the header collapses. Information sections use rounded translucent content material;
 actions use GlassBackgroundView (native UIGlassEffect on iOS 26+, Telegram's fallback earlier).
 The current gallery/material/palette design includes the accepted UI work preceding this revision.
 
@@ -33,7 +33,7 @@ recording is still needed to judge the new physical interaction and actual frame
 
 ## First-frame material and avatar readiness
 
-Information cards and music use ContactsUICore's `ContactCardStyleProvider.defaultBackgroundMaterial`
+Information cards use ContactsUICore's `ContactCardStyleProvider.defaultBackgroundMaterial`
 on iOS 26+. The earlier `lightweightThin` provider looked dense in the isolated comparison and is not used for cards. The system framework
 is loaded once and retained while SwiftUI owns its material provider. This is a private system entry
 point, resolved dynamically; if unavailable, the public ultra-thin material is used instead. No Apple
@@ -53,17 +53,36 @@ profile or its scrolling animation; integrated recorded-frame checks remain requ
 The backdrop starts with the decoded round avatar while a gallery photo is unavailable. Blur is
 prepared off-main at a 256-pixel maximum edge and cached with a 4 MiB/12-entry limit, without retaining
 the source photos. A bounded thumbnail color provides the initial fill; arriving images and tone
-changes crossfade over 0.22 seconds. A separate 5.5% black shade gently dims the decorative backdrop;
+changes crossfade over 0.22 seconds. A separate 3.5% black shade gently dims the decorative backdrop;
 the full-screen shade and the card tint have independent roles and do not share an appearance switch.
 
 The build16 avatar changes were rejected on device: the lower background ended in a visible horizontal
 edge, the photo appeared cut, and the gallery motion regressed. Avatar/backdrop geometry, masks,
 image preparation and scroll palette application are restored to the November 14 revision `77f9ef704`.
-The native card material and music press fix remain. This restores the previously working baseline;
-it does not claim that the baseline's original photo/blur seam is solved. Future changes must be
-compared against recorded full-profile frames before replacing that baseline.
+The native card material and music press fix remain. The follow-up below changes only the fade mask and visible-section palette application on this
+restored geometry; integrated device animation checks remain outstanding.
 
 Before visual acceptance, record cold/warm profile opens, delayed gallery-image loading, avatar
 expansion, gift covers and scroll-to-theme in both themes. Expect no pale first card, abrupt material
 switch, late full-screen photo pop or row relayout on image completion. Cached opens should reuse
 the prepared blur; unavailable images should retain a stable placeholder until a smooth handoff.
+
+## Follow-up after the avatar rollback
+
+The accepted Contacts card material is unchanged. The music strip uses the existing interactive
+GlassBarButtonComponent, with its content inside the native glass control; the old whole-plate scale
+and opacity press effects remain disabled. Decorative profile tabs have no white tint and return to
+the ordinary panel at full theme collapse. Members panes get the same material behind their list,
+positioned from the existing list-background frame rather than from row snapshots.
+
+The gallery frame, image size and native reflection transforms remain at the restored baseline.
+Only the gallery's fade mask changes: it ends at the current sharp photo's lower edge, so the sharp
+replicated tail cannot reappear below it. A smooth fade covers the last fifth of the photo; it stays
+attached throughout collapse. Invalid/empty image geometry uses a full-gallery fade until the decoded image has a valid frame.
+Photo blur preparation remains bounded and off-main. Offscreen information sections do not relayout
+for every intermediate scroll palette; they catch up when entering the visible region.
+
+The actual mask class was exercised in an isolated iOS 27 VM test. External validation artifact
+`profile-photo-fade-frames/sheet.jpg` shows samples #0–#8 (t=0.656–3.123): the head and upper photo keep
+their geometry through scale/rounding changes; the new mask removes the sharp tail retained by the old
+mask. These are sparse VM captures of the isolated component, not a frame-rate or full-profile test.

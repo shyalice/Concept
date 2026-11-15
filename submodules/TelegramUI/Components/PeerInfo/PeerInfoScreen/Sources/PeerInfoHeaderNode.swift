@@ -1,3 +1,4 @@
+import GlassBarButtonComponent
 import SGSimpleSettings // MARK: Swiftgram
 import ConceptBadges
 import Foundation
@@ -703,7 +704,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             currentWalletBalance = nil
         }
         let usesProfileSurface = !self.isSettings && !isMediaOnly && !state.isEditing
-        let musicHeight: CGFloat = usesProfileSurface ? 30.0 : (hasBackground || self.isAvatarExpanded ? 24.0 : 16.0)
+        let musicHeight: CGFloat = usesProfileSurface ? 36.0 : (hasBackground || self.isAvatarExpanded ? 24.0 : 16.0)
         let bottomInset: CGFloat = currentSavedMusic != nil ? musicHeight + (usesProfileSurface ? 12.0 : 0.0) : 0.0
         let balanceInset: CGFloat = currentWalletBalance != nil ? 32.0 : 0.0
         
@@ -2819,42 +2820,37 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                 musicString.append(NSAttributedString(string: " \(artist)", font: Font.regular(usesProfileSurface ? 13.0 : 12.0), textColor: stripSecondaryColor))
                 musicString.addAttribute(.kern, value: CGFloat(2.0), range: NSRange(location: artistSeparatorIndex, length: 1))
 
-                let musicSize = music.update(
-                    transition: .immediate,
-                    component: AnyComponent(
-                        PlainButtonComponent(
-                            content: AnyComponent(
-                                HStack([
-                                    AnyComponentWithIdentity(
-                                        id: "icon",
-                                        component: AnyComponent(BundleIconComponent(name: "Media Editor/SmallAudio", tintColor: isOverlay ? .white : presentationData.theme.list.itemAccentColor))
-                                    ),
-                                    AnyComponentWithIdentity(
-                                        id: "label",
-                                        component: AnyComponent(MarqueeComponent(attributedText: musicString, maxWidth: max(1.0, (usesProfileSurface ? min(musicBandWidth - 32.0, 330.0) : musicBandWidth) - 64.0)))
-                                    ),
-                                    AnyComponentWithIdentity(
-                                        id: "arrow",
-                                        component: AnyComponent(BundleIconComponent(name: "Item List/InlineTextRightArrow", tintColor: stripSecondaryColor))
-                                    )
-                                ], spacing: 4.0)
-                            ),
-                            background: usesProfileSurface ? AnyComponent(ConceptProfileMaterialComponent(isDark: presentationData.theme.overallDarkAppearance, fallbackColor: conceptProfileSurfaceColor(presentationData.theme, dominantColor: self.conceptDominantColor, fraction: self.conceptThemeFraction, decorative: isOverlay))) : nil,
-                            minSize: CGSize(width: usesProfileSurface ? 0.0 : musicBandWidth, height: musicHeight),
-                            contentInsets: usesProfileSurface ? UIEdgeInsets(top: 0.0, left: 12.0, bottom: 0.0, right: 12.0) : UIEdgeInsets(),
-                            action: { [weak self] in
-                                self?.displaySavedMusic?()
-                            },
-                            animateAlpha: false,
-                            animateScale: !usesProfileSurface,
-                            rasterizeOnScaleAnimation: false,
-                            // Its shown text; nothing while the track's title is still loading.
-                            accessibility: ComponentAccessibility(label: musicString.string.trimmingCharacters(in: .whitespacesAndNewlines), isHidden: musicString.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                let musicContent = AnyComponent(
+                    HStack([
+                        AnyComponentWithIdentity(
+                            id: "icon",
+                            component: AnyComponent(BundleIconComponent(name: "Media Editor/SmallAudio", tintColor: isOverlay ? .white : presentationData.theme.list.itemAccentColor))
+                        ),
+                        AnyComponentWithIdentity(
+                            id: "label",
+                            component: AnyComponent(MarqueeComponent(attributedText: musicString, maxWidth: max(1.0, (usesProfileSurface ? min(musicBandWidth - 32.0, 330.0) : musicBandWidth) - 64.0)))
+                        ),
+                        AnyComponentWithIdentity(
+                            id: "arrow",
+                            component: AnyComponent(BundleIconComponent(name: "Item List/InlineTextRightArrow", tintColor: stripSecondaryColor))
                         )
-                    ),
-                    environment: {},
-                    containerSize: CGSize(width: musicBandWidth, height: musicHeight)
+                    ], spacing: 4.0)
                 )
+                let musicAccessibility = ComponentAccessibility(label: musicString.string.trimmingCharacters(in: .whitespacesAndNewlines), isHidden: musicString.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                let musicComponent: AnyComponent<Empty>
+                if usesProfileSurface {
+                    musicComponent = AnyComponent(GlassBarButtonComponent(size: nil, backgroundColor: nil,
+                        isDark: isOverlay || presentationData.theme.overallDarkAppearance, state: .glass, animateScale: false,
+                        component: AnyComponentWithIdentity(id: "music", component: musicContent),
+                        action: { [weak self] _ in self?.displaySavedMusic?() }, accessibility: musicAccessibility))
+                } else {
+                    musicComponent = AnyComponent(PlainButtonComponent(content: musicContent,
+                        minSize: CGSize(width: musicBandWidth, height: musicHeight),
+                        action: { [weak self] in self?.displaySavedMusic?() }, animateAlpha: false,
+                        animateScale: true, rasterizeOnScaleAnimation: false, accessibility: musicAccessibility))
+                }
+                let musicSize = music.update(transition: .immediate, component: musicComponent, environment: {},
+                    containerSize: CGSize(width: musicBandWidth, height: musicHeight))
                 let musicFrame = CGRect(origin: CGPoint(x: usesProfileSurface ? stripLeft + floorToScreenPixels((musicBandWidth - musicSize.width) * 0.5) : stripLeft, y: apparentBackgroundHeight - musicHeight - (usesProfileSurface ? 8.0 : (hasBackground || self.isAvatarExpanded ? 0.0 : 4.0)) + 1.0 - UIScreenPixel), size: musicSize)
                 if let musicView = music.view {
                     self.regularContentNode.accessibilityTrailingView = musicView

@@ -285,6 +285,16 @@ final class PeerInfoMembersPaneNode: ASDisplayNode, PeerInfoPaneNode {
     
     weak var parentController: ViewController?
     
+    private let profileMaterialView = ConceptProfileMaterialView()
+    private var profileMaterial: (tintColor: UIColor, targetColor: UIColor, fraction: CGFloat, isDark: Bool)?
+
+    func updateProfileMaterial(_ appearance: (tintColor: UIColor, targetColor: UIColor, fraction: CGFloat, isDark: Bool)?) {
+        self.profileMaterial = appearance
+        self.profileMaterialView.isHidden = appearance == nil || UIAccessibility.isReduceTransparencyEnabled
+        self.listBackgroundView.isHidden = !self.profileMaterialView.isHidden
+        self.updateListBackground(transition: .immediate)
+    }
+
     private let listBackgroundView: UIImageView
     private let listMaskView: UIImageView
     private let listNode: ListView
@@ -346,6 +356,9 @@ final class PeerInfoMembersPaneNode: ASDisplayNode, PeerInfoPaneNode {
         super.init()
         
         self.listNode.preloadPages = true
+        self.profileMaterialView.isUserInteractionEnabled = false
+        self.profileMaterialView.isHidden = true
+        self.view.addSubview(self.profileMaterialView)
         self.view.addSubview(self.listBackgroundView)
         self.addSubnode(self.listNode)
         self.view.addSubview(self.listMaskView)
@@ -540,6 +553,12 @@ final class PeerInfoMembersPaneNode: ASDisplayNode, PeerInfoPaneNode {
         
         let listBackgroundFrame = CGRect(origin: CGPoint(x: 16.0, y: distanceToTop), size: CGSize(width: max(1.0, self.listNode.visibleSize.width - 16.0 * 2.0), height: max(1.0, self.listNode.visibleSize.height - distanceToBottom - distanceToTop)))
         let listMaskFrame = CGRect(origin: CGPoint(x: 0.0, y: listBackgroundFrame.minY), size: CGSize(width: listBackgroundFrame.width + 16.0 * 2.0, height: listBackgroundFrame.height))
+        if let appearance = self.profileMaterial, !self.profileMaterialView.isHidden {
+            transition.updateFrame(view: self.profileMaterialView, frame: listBackgroundFrame)
+            self.profileMaterialView.update(size: listBackgroundFrame.size, radius: 26.0,
+                tintColor: appearance.tintColor, targetColor: appearance.targetColor, fraction: appearance.fraction,
+                isDark: appearance.isDark, transition: transition)
+        }
         transition.updateFrame(view: self.listBackgroundView, frame: listBackgroundFrame)
         transition.updateFrame(view: self.listMaskView, frame: listMaskFrame)
     }

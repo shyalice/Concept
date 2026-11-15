@@ -80,31 +80,3 @@ final class ConceptProfileMaterialView: UIView {
         self.update(size: size, radius: radius, tintColor: color, targetColor: .clear, fraction: 0.0, isDark: isDark, transition: transition)
     }
 }
-
-final class ConceptProfileMaterialComponent: Component {
-    let isDark: Bool
-    let fallbackColor: UIColor
-    init(isDark: Bool, fallbackColor: UIColor) {
-        self.isDark = isDark
-        self.fallbackColor = fallbackColor
-    }
-    static func == (lhs: ConceptProfileMaterialComponent, rhs: ConceptProfileMaterialComponent) -> Bool {
-        return lhs.isDark == rhs.isDark && lhs.fallbackColor.isEqual(rhs.fallbackColor)
-    }
-    final class View: UIView {
-        let material = ConceptProfileMaterialView()
-        override init(frame: CGRect) {
-            super.init(frame: frame)
-            self.isUserInteractionEnabled = false
-            self.layer.cornerCurve = .continuous
-            self.addSubview(self.material)
-        }
-        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    }
-    func makeView() -> View { return View(frame: .zero) }
-    func update(view: View, availableSize: CGSize, state: EmptyComponentState, environment: Environment<Empty>, transition: ComponentTransition) -> CGSize {
-        transition.setFrame(view: view.material, frame: CGRect(origin: .zero, size: availableSize))
-        view.material.update(size: availableSize, radius: availableSize.height * 0.5, color: self.fallbackColor, isDark: self.isDark, transition: .immediate)
-        return availableSize
-    }
-}
