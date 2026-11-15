@@ -98,3 +98,14 @@ The backdrop-only shade is now 5%, up from 3.5%; card material and gallery geome
 External isolated iOS captures `profile-shade-frames/sheet.jpg`, #0–#5 (t=0.000–1.539), compare
 the old and new shade over bright photo-like and gift-like color fields. The change is slight
 throughout the color sweep. These frames validate the shade layer, not the integrated profile.
+
+## Account badges (build 22)
+
+Settings account rows and account-switcher context rows reserve space for a 16-point Concept badge
+beside the existing Premium/emoji status. Badge changes update the row, presentation-theme changes
+update its color, and swipe-reveal moves the badge with the title. Scam/fake identities retain the
+existing suppression policy. The plain profile butterfly is raised by one physical screen pixel;
+rosette roles retain their existing alignment. The accepted card material is unchanged.
+
+The complete app compiled with this batch. Integrated account-switcher/profile frame captures and
+layout checks with long names remain outstanding; build success alone does not validate appearance.
