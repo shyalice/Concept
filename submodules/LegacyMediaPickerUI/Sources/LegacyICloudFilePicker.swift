@@ -9,6 +9,11 @@ import TelegramCore
 private class DocumentPickerViewController: UIDocumentPickerViewController {
     var forceDarkTheme = false
     var didDisappear: (() -> Void)?
+    var retainedPickerDelegate: LegacyICloudFileController?
+
+    deinit {
+        self.retainedPickerDelegate?.pickerReleasedWithoutResult()
+    }
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -107,6 +112,10 @@ private final class LegacyICloudFileController: LegacyController, UIDocumentPick
         self.pickerPresentation.pickerDidDisappear()
     }
     
+    func pickerReleasedWithoutResult() {
+        self.finish(urls: [])
+    }
+
     private func cancelIfPickerLost(reason: String) {
         if self.pickerPresentation.isLost {
             Logger.shared.log("LegacyICloudFilePicker", "the document picker is gone without a result, cancelling (\(reason))")
@@ -122,14 +131,17 @@ private final class LegacyICloudFileController: LegacyController, UIDocumentPick
     
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
         self.finish(urls: [])
+        (controller as? DocumentPickerViewController)?.retainedPickerDelegate = nil
     }
     
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         self.finish(urls: urls)
+        (controller as? DocumentPickerViewController)?.retainedPickerDelegate = nil
     }
     
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentAt url: URL) {
         self.finish(urls: [url])
+        (controller as? DocumentPickerViewController)?.retainedPickerDelegate = nil
     }
 }
 
@@ -185,6 +197,7 @@ public func legacyICloudFilePicker(theme: PresentationTheme, mode: LegacyICloudF
             if let window = legacyController.view.window {
                 controller.popoverPresentationController?.sourceView = window
                 controller.popoverPresentationController?.sourceRect = CGRect(origin: CGPoint(x: window.bounds.width / 2.0, y: window.bounds.size.height - 1.0), size: CGSize(width: 1.0, height: 1.0))
+                controller.retainedPickerDelegate = legacyController
                 window.rootViewController?.present(controller, animated: true)
                 legacyController.presentationCompleted = nil
                 legacyController.pickerPresentationRequested(controller)

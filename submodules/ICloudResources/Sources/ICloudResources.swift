@@ -123,9 +123,8 @@ private func audioArtworkData(from asset: AVURLAsset) -> Data? {
 
 private func descriptionWithUrl(_ url: URL) -> ICloudFileDescription? {
     if #available(iOSApplicationExtension 9.0, iOS 9.0, *) {
-        guard url.startAccessingSecurityScopedResource() else {
-            return nil
-        }
+        guard let access = ICloudFileAccess(url: url) else { return nil }
+        defer { withExtendedLifetime(access) {} }
         
         guard let urlData = try? url.bookmarkData(options: URL.BookmarkCreationOptions.suitableForBookmarkFile, includingResourceValuesForKeys: nil, relativeTo: nil) else {
             return nil
@@ -135,9 +134,7 @@ private func descriptionWithUrl(_ url: URL) -> ICloudFileDescription? {
             return nil
         }
         
-        guard let fileName = (url.lastPathComponent as NSString).removingPercentEncoding else {
-            return nil
-        }
+        let fileName = url.lastPathComponent
         
         var audioMetadata: ICloudFileDescription.AudioMetadata?
         let fileExtension = url.pathExtension.lowercased()
@@ -184,8 +181,6 @@ private func descriptionWithUrl(_ url: URL) -> ICloudFileDescription? {
             fileSize: fileSize,
             audioMetadata: audioMetadata
         )
-        
-        url.stopAccessingSecurityScopedResource()
         
         return result
     } else {
@@ -252,20 +247,16 @@ public func iCloudFileDescription(_ url: URL) -> Signal<ICloudFileDescription?, 
 }
 
 private final class ICloudFileResourceCopyItem: EngineRawMediaResourceDataFetchCopyLocalItem {
-    private let url: URL
+    private let access: ICloudFileAccess
     
-    init(url: URL) {
-        self.url = url
-    }
-    
-    deinit {
-        self.url.stopAccessingSecurityScopedResource()
+    init(access: ICloudFileAccess) {
+        self.access = access
     }
     
     func copyTo(url: URL) -> Bool {
         var success = true
         do {
-            try FileManager.default.copyItem(at: self.url, to: url)
+            try FileManager.default.copyItem(at: self.access.url, to: url)
         } catch {
             success = false
         }
@@ -298,12 +289,13 @@ public func fetchICloudFileResource(resource: ICloudFileResource) -> Signal<Engi
             }
         }
         
-        guard url.startAccessingSecurityScopedResource() else {
+        guard let access = ICloudFileAccess(url: url) else {
             subscriber.putCompletion()
             return EmptyDisposable
         }
         
         let complete = {
+            defer { withExtendedLifetime(access) {} }
             if resource.thumbnail {
                 let tempFile = EngineTempBox.shared.tempFile(fileName: "thumb.jpg")
                 var data = Data()
@@ -323,7 +315,7 @@ public func fetchICloudFileResource(resource: ICloudFileResource) -> Signal<Engi
                     subscriber.putNext(.moveTempFile(file: tempFile))
                 }
             } else {
-                subscriber.putNext(.copyLocalItem(ICloudFileResourceCopyItem(url: url)))
+                subscriber.putNext(.copyLocalItem(ICloudFileResourceCopyItem(access: access)))
             }
             subscriber.putCompletion()
         }
