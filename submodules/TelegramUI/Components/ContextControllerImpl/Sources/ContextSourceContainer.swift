@@ -372,7 +372,8 @@ final class ContextSourceContainer: ASDisplayNode {
     
     private weak var controller: ContextControllerImpl?
     
-    private let backgroundNode: NavigationBackgroundNode
+    private var backgroundNode: NavigationBackgroundNode
+    private var backgroundBlurRadius: CGFloat?
     
     var sources: [Source] = []
     var activeIndex: Int = 0
@@ -650,6 +651,24 @@ final class ContextSourceContainer: ASDisplayNode {
         var childLayout = layout
         
         if let activeSource = self.activeSource {
+            let blurRadius: CGFloat?
+            if case let .extracted(extracted) = activeSource.source, extracted.blurBackground {
+                blurRadius = extracted.backgroundBlurRadius
+            } else {
+                blurRadius = nil
+            }
+            if self.backgroundBlurRadius != blurRadius {
+                let previous = self.backgroundNode
+                let background = NavigationBackgroundNode(color: .clear, enableBlur: false,
+                    enableSaturation: blurRadius == nil, customBlurRadius: blurRadius)
+                background.frame = previous.frame
+                background.alpha = previous.alpha
+                background.layer.contents = transparentHitTestImage.cgImage
+                self.insertSubnode(background, at: 0)
+                previous.removeFromSupernode()
+                self.backgroundNode = background
+                self.backgroundBlurRadius = blurRadius
+            }
             switch activeSource.source {
             case .location, .reference:
                 self.backgroundNode.updateColor(
@@ -660,7 +679,7 @@ final class ContextSourceContainer: ASDisplayNode {
                 )
             case let .extracted(extracted):
                 self.backgroundNode.updateColor(
-                    color: extracted.blurBackground ? presentationData.theme.contextMenu.dimColor : .clear,
+                    color: extracted.blurBackground ? presentationData.theme.contextMenu.dimColor.withMultipliedAlpha(blurRadius == nil ? 1.0 : 0.45) : .clear,
                     enableBlur: extracted.blurBackground,
                     forceKeepBlur: extracted.blurBackground,
                     transition: .immediate

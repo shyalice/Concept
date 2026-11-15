@@ -559,6 +559,9 @@ public func bubbleMaskForType(_ type: ChatMessageBackgroundType, graphics: Princ
 
 public final class ChatMessageBubbleBackdrop: ASDisplayNode {
     public private(set) var backgroundContent: WallpaperBubbleBackgroundNode?
+    private var isExtractedToContextPreview = false
+    private var opaquePreviewNode: ASImageNode?
+    private var opaquePreviewColors: [UIColor] = []
     
     private var currentType: ChatMessageBackgroundType?
     private var currentMaskMode: Bool?
@@ -592,6 +595,7 @@ public final class ChatMessageBubbleBackdrop: ASDisplayNode {
     
     public override var frame: CGRect {
         didSet {
+            self.opaquePreviewNode?.frame = self.bounds
             if let maskView = self.maskView {
                 let maskFrame = self.bounds.insetBy(dx: -maskInset, dy: -maskInset)
                 if maskView.frame != maskFrame {
@@ -608,6 +612,58 @@ public final class ChatMessageBubbleBackdrop: ASDisplayNode {
         super.init()
         
         self.clipsToBounds = true
+    }
+
+    public func setIsExtractedToContextPreview(_ value: Bool) {
+        guard self.isExtractedToContextPreview != value else { return }
+        self.isExtractedToContextPreview = value
+        self.updateOpaquePreview()
+    }
+
+    private func updateOpaquePreview() {
+        let colors: [UIColor]
+        if self.isExtractedToContextPreview, let theme = self.theme, let type = self.currentType {
+            switch type {
+            case .incoming:
+                let palette = theme.theme.chat.message.incoming.bubble
+                colors = (theme.wallpaper.hasWallpaper ? palette.withWallpaper : palette.withoutWallpaper).fill.map { $0.withAlphaComponent(1.0) }
+            case .outgoing:
+                let palette = theme.theme.chat.message.outgoing.bubble
+                colors = (theme.wallpaper.hasWallpaper ? palette.withWallpaper : palette.withoutWallpaper).fill.map { $0.withAlphaComponent(1.0) }
+            case .none:
+                colors = []
+            }
+        } else {
+            colors = []
+        }
+        self.backgroundContent?.isHidden = !colors.isEmpty
+        guard !colors.isEmpty else {
+            self.opaquePreviewNode?.removeFromSupernode()
+            self.opaquePreviewNode = nil
+            self.opaquePreviewColors = []
+            return
+        }
+        let node: ASImageNode
+        if let current = self.opaquePreviewNode {
+            node = current
+        } else {
+            node = ASImageNode()
+            node.displaysAsynchronously = false
+            node.isUserInteractionEnabled = false
+            self.addSubnode(node)
+            self.opaquePreviewNode = node
+        }
+        if self.opaquePreviewColors != colors {
+            self.opaquePreviewColors = colors
+            node.image = generateImage(CGSize(width: 1.0, height: 32.0), contextGenerator: { size, context in
+                context.setFillColor(colors[0].cgColor)
+                context.fill(CGRect(origin: .zero, size: size))
+                if colors.count > 1, let gradient = CGGradient(colorsSpace: deviceColorSpace, colors: colors.map { $0.cgColor } as CFArray, locations: nil) {
+                    context.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 0.0, y: size.height), options: [])
+                }
+            })
+        }
+        node.frame = self.bounds
     }
     
     public func setMaskMode(_ maskMode: Bool) {
@@ -684,6 +740,7 @@ public final class ChatMessageBubbleBackdrop: ASDisplayNode {
 
         // Outside the block above on purpose: see `updateContent`.
         self.updateContent(type: type, backgroundNode: backgroundNode, typeUpdated: typeUpdated)
+        self.updateOpaquePreview()
     }
 
     /// Runs on every pass, not only when the type changes, because `ChatMessageBackground.setType`

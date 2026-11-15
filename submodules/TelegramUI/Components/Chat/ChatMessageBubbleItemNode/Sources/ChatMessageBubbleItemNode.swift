@@ -682,6 +682,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                     
                     backgroundNode.setType(type: type, highlighted: false, graphics: currentParams.graphics, maskMode: true, hasWallpaper: currentParams.presentationData.theme.wallpaper.hasWallpaper, transition: .immediate, backgroundNode: currentParams.presentationContext.backgroundNode)
                     backgroundWallpaperNode.setType(type: type, theme: currentParams.presentationData.theme, essentialGraphics: currentParams.graphics, maskMode: true, backgroundNode: currentParams.presentationContext.backgroundNode)
+                    backgroundWallpaperNode.setIsExtractedToContextPreview(true)
                 }
                 
                 if let currentParams = self.currentParams {
@@ -1138,7 +1139,13 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 return
             }
             self.backgroundWallpaperNode.setMaskMode(self.backgroundMaskMode)
+            self.backgroundWallpaperNode.setIsExtractedToContextPreview(isExtractedToContextPreview)
             self.backgroundNode.setMaskMode(self.backgroundMaskMode)
+            let contentAlpha: CGFloat = !isExtractedToContextPreview && self.item.map({ isDeletedBubbleMessage($0.message) }) == true
+                ? CGFloat(AntiDeleteManager.shared.deletedMessageDisplayAlpha) : 1.0
+            self.mainContextSourceNode.contentNode.layer.removeAnimation(forKey: "opacity")
+            self.mainContextSourceNode.contentNode.alpha = contentAlpha
+            self.mainContextSourceNode.contentNode.layer.allowsGroupOpacity = contentAlpha < 1.0
             if !isExtractedToContextPreview, let (rect, size) = self.absoluteRect {
                 self.updateAbsoluteRect(rect, within: size)
             }
@@ -5680,6 +5687,11 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                     }
                     
                     container?.isExtractedToContextPreviewUpdated(isExtractedToContextPreview)
+                    let contentAlpha: CGFloat = !isExtractedToContextPreview && strongSelf.item.map({ isDeletedBubbleMessage($0.message) }) == true
+                        ? CGFloat(AntiDeleteManager.shared.deletedMessageDisplayAlpha) : 1.0
+                    strongContextSourceNode.contentNode.layer.removeAnimation(forKey: "opacity")
+                    strongContextSourceNode.contentNode.alpha = contentAlpha
+                    strongContextSourceNode.contentNode.layer.allowsGroupOpacity = contentAlpha < 1.0
 
                     if !isExtractedToContextPreview, let (rect, size) = container?.absoluteRect {
                         container?.updateAbsoluteRect(rect, within: size)
@@ -5730,7 +5742,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
 
             if let contentContainer = contentContainer {
                 let deletedMessageAlpha = CGFloat(AntiDeleteManager.shared.deletedMessageDisplayAlpha)
-                let containerAlpha: CGFloat = isDeletedBubbleMessage(item.message) ? deletedMessageAlpha : 1.0
+                let containerAlpha: CGFloat = isDeletedBubbleMessage(item.message) && !contentContainer.sourceNode.isExtractedToContextPreview ? deletedMessageAlpha : 1.0
                 // UIViewGroupOpacity is disabled app-wide. Composite the thumbnail,
                 // video and overlays before fading, so the thumbnail cannot bleed
                 // through a separately translucent playback surface.
@@ -5746,7 +5758,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         }
         
         let mainContainerAlpha: CGFloat
-        if contentContainerNodeFrames.isEmpty, isDeletedBubbleMessage(item.message) {
+        if contentContainerNodeFrames.isEmpty, isDeletedBubbleMessage(item.message), !strongSelf.mainContextSourceNode.isExtractedToContextPreview {
             mainContainerAlpha = CGFloat(AntiDeleteManager.shared.deletedMessageDisplayAlpha)
         } else {
             mainContainerAlpha = 1.0

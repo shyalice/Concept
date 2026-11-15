@@ -411,6 +411,7 @@ public protocol ContextExtractedContentSource: AnyObject {
     var ignoreContentTouches: Bool { get }
     var keepDefaultContentTouches: Bool { get }
     var blurBackground: Bool { get }
+    var backgroundBlurRadius: CGFloat? { get }
     var shouldBeDismissed: Signal<Bool, NoError> { get }
     var additionalInsets: UIEdgeInsets { get }
     
@@ -421,6 +422,8 @@ public protocol ContextExtractedContentSource: AnyObject {
 }
 
 public extension ContextExtractedContentSource {
+    var backgroundBlurRadius: CGFloat? { nil }
+
     var initialAppearanceOffset: CGPoint {
         return .zero
     }
