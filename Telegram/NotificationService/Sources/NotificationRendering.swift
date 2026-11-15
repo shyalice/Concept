@@ -1,3 +1,4 @@
+import ConceptNotifications
 import SGAppGroupIdentifier // MARK: Swiftgram
 import Foundation
 import PasscodeCore
@@ -644,10 +645,8 @@ struct NotificationContent: CustomStringConvertible {
     func generate() -> UNNotificationContent {
         var content = UNMutableNotificationContent()
         
-        //Logger.shared.log("NotificationService", "Generating final content: \(self.description)")
         // MARK: Swiftgram
         #if DEBUG
-        print("body:\(content.body) silent:\(self.silent) isMentionOrReply:\(self.isMentionOrReply) sgMentionAndReplyAction:\(sgMentionAndReplyAction) isPinned:\(self.isPinned) sgPinnedMessageAction:\(sgPinnedMessageAction)" +  " forceIsEmpty:\(self.forceIsEmpty) forceIsSilent:\(self.forceIsSilent)")
         #endif
         if (self.isEmpty || self.forceIsEmpty) && !sgLegacyNotificationsFix {
             return UNNotificationContent()
@@ -811,51 +810,14 @@ struct NotificationContent: CustomStringConvertible {
 
 // MARK: Swiftgram
 extension NotificationContent {
-    var forceIsEmpty: Bool {
-        if self.sgStatus.status > 1 && !self.isEmpty {
-            if self.isPinned {
-                var desiredAction = sgPinnedMessageAction
-                if let chatId = chatId, let exceptionAction = sgPinnedMessageActionExceptions["\(chatId)"] {
-                    desiredAction = exceptionAction
-                }
-                if desiredAction == "disabled" {
-                    return true
-                }
-            }
-            if self.isMentionOrReply {
-                var desiredAction = sgMentionAndReplyAction
-                if let chatId = chatId, let exceptionAction = sgMentionAndReplyActionExceptions["\(chatId)"] {
-                    desiredAction = exceptionAction
-                }
-                if desiredAction == "disabled" {
-                    return true
-                }
-            }
-        }
-        return false
+    private var notificationPolicy: NotificationPresentationPolicy {
+        return NotificationPresentationPolicy(enabled: self.sgStatus.status > 1,
+            isPinned: self.isPinned, isMentionOrReply: self.isMentionOrReply,
+            chatId: self.chatId.map(String.init), pinnedAction: sgPinnedMessageAction,
+            pinnedExceptions: sgPinnedMessageActionExceptions,
+            mentionAction: sgMentionAndReplyAction, mentionExceptions: sgMentionAndReplyActionExceptions)
     }
-    var forceIsSilent: Bool {
-        if self.sgStatus.status > 1 && !self.silent {
-            if self.isPinned {
-                var desiredAction = sgPinnedMessageAction
-                if let chatId = chatId, let exceptionAction = sgPinnedMessageActionExceptions["\(chatId)"] {
-                    desiredAction = exceptionAction
-                }
-                if desiredAction == "silenced" {
-                    return true
-                }
-            }
-            if self.isMentionOrReply {
-                var desiredAction = sgMentionAndReplyAction
-                if let chatId = chatId, let exceptionAction = sgMentionAndReplyActionExceptions["\(chatId)"] {
-                    desiredAction = exceptionAction
-                }
-                if desiredAction == "silenced" {
-                    return true
-                }
-            }
-        }
-        return false
-    }
+    var forceIsEmpty: Bool { return !self.isEmpty && self.notificationPolicy.suppress }
+    var forceIsSilent: Bool { return !self.silent && self.notificationPolicy.silence }
 }
 //

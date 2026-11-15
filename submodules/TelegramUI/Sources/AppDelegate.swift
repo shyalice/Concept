@@ -3193,6 +3193,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         |> take(1)
         |> mapToSignal { sharedApplicationContext -> Signal<AuthorizedApplicationContext, NoError> in
             if let accountId = accountId {
+                guard conceptNotificationTargetIsVisible(accountId: accountId, peerId: peerId, sharedContext: sharedApplicationContext.sharedContext) else { return .complete() }
                 sharedApplicationContext.sharedContext.switchToAccount(id: accountId)
                 return self.authorizedContext()
                 |> filter { context in
@@ -3224,6 +3225,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         |> deliverOnMainQueue
         |> mapToSignal { sharedApplicationContext -> Signal<AuthorizedApplicationContext, NoError> in
             if let accountId = accountId {
+                guard conceptNotificationTargetIsVisible(accountId: accountId, peerId: peerId, sharedContext: sharedApplicationContext.sharedContext) else { return .complete() }
                 sharedApplicationContext.sharedContext.switchToAccount(id: accountId)
                 return self.authorizedContext()
                 |> filter { context in
@@ -3237,6 +3239,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         }
         self.openChatWhenReadyDisposable.set((signal
         |> deliverOnMainQueue).start(next: { context in
+            guard conceptNotificationTargetIsVisible(accountId: context.context.account.id, peerId: peerId, sharedContext: context.context.sharedContext) else { return }
             context.openChatWithPeerId(peerId: peerId, threadId: threadId, messageId: messageId, activateInput: activateInput, storyId: storyId, openAppIfAny: openAppIfAny, alwaysKeepMessageId: alwaysKeepMessageId)
         }))
     }
@@ -3336,7 +3339,16 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         }
         
         let _ = (accountIdFromNotification(response.notification, sharedContext: self.sharedContextPromise.get())
-        |> deliverOnMainQueue).start(next: { accountId in
+        |> mapToSignal { accountId in
+            self.sharedContextPromise.get() |> take(1) |> map { ($0, accountId) }
+        }
+        |> deliverOnMainQueue).start(next: { sharedApplicationContext, accountId in
+            if let accountId, !conceptNotificationTargetIsVisible(accountId: accountId, peerId: peerIdFromNotification(response.notification)?.peerId, sharedContext: sharedApplicationContext.sharedContext) {
+                center.removeDeliveredNotifications(withIdentifiers: [response.notification.request.identifier])
+                center.removePendingNotificationRequests(withIdentifiers: [response.notification.request.identifier])
+                completionHandler()
+                return
+            }
             if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
                 if let dataUrl = response.notification.request.content.userInfo["url"] as? String {
                     if let url = URL(string: dataUrl) {
@@ -3349,7 +3361,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                             messageId = messageIdFromNotification(peerId: peerId, notification: response.notification)
                         }
                         let storyId = storyIdFromNotification(peerId: peerId, notification: response.notification)
-                        self.openChatWhenReady(accountId: accountId, peerId: peerId, threadId: threadId, messageId: messageId, storyId: storyId)
+                        self.openChatWhenReady(accountId: accountId, peerId: peerId, threadId: threadId, messageId: messageId, storyId: storyId, alwaysKeepMessageId: response.notification.request.identifier.hasPrefix("concept_local_"))
                     }
                 }
                 completionHandler()
@@ -3376,33 +3388,41 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                     |> take(1)
                     |> deliverOnMainQueue
                     |> mapToSignal { account -> Signal<Void, NoError> in
-                        if let messageId = messageIdFromNotification(peerId: peerId, notification: response.notification) {
-                            let _ = TelegramEngine(account: account).messages.applyMaxReadMessageIdInteractively(messageId: messageId).start()
-                        }
-                        var replyToMessageId: MessageId?
-                        if let threadId {
-                            replyToMessageId = MessageId(peerId: peerId, namespace: Namespaces.Message.Cloud, id: Int32(clamping: threadId))
-                        }
-                        return enqueueMessages(account: account, peerId: peerId, messages: [EnqueueMessage.message(text: text, attributes: [], inlineStickers: [:], mediaReference: nil, threadId: threadId, replyToMessageId: replyToMessageId.flatMap { EngineMessageReplySubject(messageId: $0, quote: nil, innerSubject: nil) }, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])])
-                        |> map { messageIds -> MessageId? in
-                            if messageIds.isEmpty {
-                                return nil
-                            } else {
-                                return messageIds[0]
+                        guard conceptNotificationTargetIsVisible(accountId: account.id, peerId: peerId, sharedContext: sharedContext.sharedContext, requiresUnlocked: true) else { return .complete() }
+                        return TelegramEngine(account: account).data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: peerId))
+                        |> deliverOnMainQueue
+                        |> mapToSignal { peer -> Signal<Void, NoError> in
+                            guard let peer, conceptNotificationTargetIsVisible(accountId: account.id, peerId: peerId, sharedContext: sharedContext.sharedContext, requiresUnlocked: true) else { return .complete() }
+                            let threadId = peer._asPeer().isForumOrMonoForum ? threadId : nil
+                            if let messageId = messageIdFromNotification(peerId: peerId, notification: response.notification) {
+                                let _ = TelegramEngine(account: account).messages.applyMaxReadMessageIdInteractively(messageId: messageId).start()
                             }
-                        }
-                        |> mapToSignal { messageId -> Signal<Void, NoError> in
-                            if let messageId = messageId {
-                                return account.postbox.unsentMessageIdsView()
-                                |> filter { view in
-                                    return !view.ids.contains(messageId)
+                            var replyToMessageId: MessageId?
+                            replyToMessageId = messageIdFromNotification(peerId: peerId, notification: response.notification)
+                            if replyToMessageId == nil, let threadId, let rootId = Int32(exactly: threadId) {
+                                replyToMessageId = MessageId(peerId: peerId, namespace: Namespaces.Message.Cloud, id: rootId)
+                            }
+                            return enqueueMessages(account: account, peerId: peerId, messages: [EnqueueMessage.message(text: text, attributes: [], inlineStickers: [:], mediaReference: nil, threadId: threadId, replyToMessageId: replyToMessageId.flatMap { EngineMessageReplySubject(messageId: $0, quote: nil, innerSubject: nil) }, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])])
+                            |> map { messageIds -> MessageId? in
+                                if messageIds.isEmpty {
+                                    return nil
+                                } else {
+                                    return messageIds[0]
                                 }
-                                |> take(1)
-                                |> mapToSignal { _ -> Signal<Void, NoError> in
+                            }
+                            |> mapToSignal { messageId -> Signal<Void, NoError> in
+                                if let messageId = messageId {
+                                    return account.postbox.unsentMessageIdsView()
+                                    |> filter { view in
+                                        return !view.ids.contains(messageId)
+                                    }
+                                    |> take(1)
+                                    |> mapToSignal { _ -> Signal<Void, NoError> in
+                                        return .complete()
+                                    }
+                                } else {
                                     return .complete()
                                 }
-                            } else {
-                                return .complete()
                             }
                         }
                     }

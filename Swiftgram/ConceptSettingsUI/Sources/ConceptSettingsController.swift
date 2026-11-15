@@ -26,6 +26,7 @@ private final class ConceptSettingsControllerArguments {
     let openTextReplacement: () -> Void
     let toggleBadges: (Bool) -> Void
     let toggleWallpapers: (Bool) -> Void
+    let toggleBlockedUsers: (Bool) -> Void
     let openNotifications: () -> Void
 
     init(
@@ -39,6 +40,7 @@ private final class ConceptSettingsControllerArguments {
         openTextReplacement: @escaping () -> Void,
         toggleBadges: @escaping (Bool) -> Void,
         toggleWallpapers: @escaping (Bool) -> Void,
+        toggleBlockedUsers: @escaping (Bool) -> Void,
         openNotifications: @escaping () -> Void
     ) {
         self.switchHideAllSecretsOnManualAppLock = switchHideAllSecretsOnManualAppLock
@@ -51,6 +53,7 @@ private final class ConceptSettingsControllerArguments {
         self.openTextReplacement = openTextReplacement
         self.toggleBadges = toggleBadges
         self.toggleWallpapers = toggleWallpapers
+        self.toggleBlockedUsers = toggleBlockedUsers
         self.openNotifications = openNotifications
     }
 }
@@ -73,13 +76,14 @@ private enum ConceptSettingsEntry: ItemListNodeEntry {
     case textReplacement(PresentationTheme, String)
     case badges(PresentationTheme, String, Bool)
     case disableWallpapers(PresentationTheme, String, Bool)
+    case hideBlockedUsers(PresentationTheme, String, Bool)
     case notifications(PresentationTheme, String)
 
     var section: ItemListSectionId {
         switch self {
         case .hideAllSecretsHeader, .hideAllSecretsOnManualAppLock, .hideAllSecretsOnDeviceShake, .hideAllSecretsOnDeviceShakeInfo:
             return ConceptSettingsSection.hideAllSecrets.rawValue
-        case .privacyHeader, .antiDeleteSettings, .ghostMode, .miscSettings, .deviceSpoofing, .notifications, .textReplacement, .disableWallpapers, .badges:
+        case .privacyHeader, .antiDeleteSettings, .ghostMode, .miscSettings, .deviceSpoofing, .notifications, .textReplacement, .disableWallpapers, .badges, .hideBlockedUsers:
             return ConceptSettingsSection.privacy.rawValue
         }
     }
@@ -105,6 +109,7 @@ private enum ConceptSettingsEntry: ItemListNodeEntry {
         case .deviceSpoofing:
             return 8
         case .badges: return 12
+        case .hideBlockedUsers: return 13
         case .textReplacement: return 10
         case .disableWallpapers: return 11
         case .notifications:
@@ -140,6 +145,8 @@ private enum ConceptSettingsEntry: ItemListNodeEntry {
             return false
         case let .textReplacement(theme, text):
             if case .textReplacement(theme, text) = rhs { return true }; return false
+        case let .hideBlockedUsers(theme, text, value):
+            if case .hideBlockedUsers(theme, text, value) = rhs { return true }; return false
         case let .badges(theme, text, value):
             if case .badges(theme, text, value) = rhs { return true }; return false
         case let .disableWallpapers(theme, text, value):
@@ -188,6 +195,8 @@ private enum ConceptSettingsEntry: ItemListNodeEntry {
             })
         case let .textReplacement(_, title):
             return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: title, label: "", sectionId: self.section, style: .blocks, action: arguments.openTextReplacement)
+        case let .hideBlockedUsers(_, title, value):
+            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: title, value: value, sectionId: self.section, style: .blocks, updated: arguments.toggleBlockedUsers)
         case let .badges(_, title, value):
             return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: title, value: value, sectionId: self.section, style: .blocks, updated: arguments.toggleBadges)
         case let .disableWallpapers(_, title, value):
@@ -233,6 +242,7 @@ private func conceptSettingsControllerEntries(presentationData: PresentationData
     entries.append(.notifications(presentationData.theme, presentationData.strings.baseLanguageCode.hasPrefix("ru") ? "Уведомления" : "Notifications"))
 
     let ru = presentationData.strings.baseLanguageCode.hasPrefix("ru")
+    entries.append(.hideBlockedUsers(presentationData.theme, ru ? "Скрывать сообщения заблокированных" : "Hide Blocked Users’ Messages", ConceptMessageFilterSettings.hideBlockedUsers))
     entries.append(.textReplacement(presentationData.theme, ru ? "Замены при отправке" : "Text Replacement"))
     entries.append(.disableWallpapers(presentationData.theme, ru ? "Отключить обои отдельных чатов" : "Disable Per-Chat Wallpapers", ConceptAppearanceSettings.disablePerChatWallpaper))
     entries.append(.badges(presentationData.theme, ru ? "Значки Concept рядом с именами" : "Concept Name Badges", ConceptBadgeService.isEnabled))
@@ -283,6 +293,9 @@ public func conceptSettingsController(context: AccountContext) -> ViewController
             version += 1
             statePromise.set(ConceptSettingsState(settings: context.sharedContext.currentConceptSettings.with { $0 }, version: version))
         },
+        toggleBlockedUsers: { value in
+            ConceptMessageFilterSettings.hideBlockedUsers = value
+        },
         openNotifications: {
             pushControllerImpl?(conceptNotificationsController(context: context))
         }
@@ -313,6 +326,7 @@ public func conceptSettingsController(context: AccountContext) -> ViewController
             MiscSettingsManager.settingsChangedNotification,
             DeviceSpoofManager.settingsChangedNotification,
             ConceptAppearanceSettings.changed,
+            ConceptMessageFilterSettings.changed,
             ConceptTextReplacement.settingsChanged,
             ConceptBadgeService.changed
         ]

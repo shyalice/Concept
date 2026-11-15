@@ -949,11 +949,12 @@ final class AuthorizedApplicationContext {
                     guard let peer = peer else {
                         return
                     }
+                    guard conceptNotificationTargetIsVisible(accountId: self.context.account.id, peerId: peerId, sharedContext: self.context.sharedContext) else { return }
                     
                     let chatLocation: NavigateToChatControllerParams.Location
-                    if let threadId = threadId {
+                    if let threadId = threadId, peer._asPeer().isForumOrMonoForum {
                         chatLocation = .replyThread(ChatReplyThreadMessage(
-                            peerId: peerId, threadId: threadId, channelMessageId: nil, isChannelPost: false, isForumPost: true, isMonoforumPost: false, maxMessage: nil, maxReadIncomingMessageId: nil, maxReadOutgoingMessageId: nil, unreadCount: 0, initialFilledHoles: IndexSet(), initialAnchor: .automatic, isNotAvailable: false
+                            peerId: peerId, threadId: threadId, channelMessageId: nil, isChannelPost: false, isForumPost: peer._asPeer().isForum, isMonoforumPost: peer.isMonoForum, maxMessage: nil, maxReadIncomingMessageId: nil, maxReadOutgoingMessageId: nil, unreadCount: 0, initialFilledHoles: IndexSet(), initialAnchor: .automatic, isNotAvailable: false
                         ))
                     } else {
                         chatLocation = .peer(peer)

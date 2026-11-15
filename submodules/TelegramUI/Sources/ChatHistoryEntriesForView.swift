@@ -80,6 +80,7 @@ func chatHistoryEntriesForView(
     skipViewOnceMedia: Bool,
     pendingUnpinnedAllMessages: Bool,
     pendingRemovedMessages: Set<MessageId>,
+    hiddenMessageIds: Set<MessageId> = [],
     associatedData: ChatMessageItemAssociatedData,
     updatingMedia: [MessageId: ChatUpdatingMessageMedia],
     customChannelDiscussionReadState: MessageId?,
@@ -171,6 +172,18 @@ func chatHistoryEntriesForView(
     var count = 0
     loop: for entry in view.entries {
         var message = entry.message.withAppliedEphemeralReplacementMessage()
+        if hiddenMessageIds.contains(message.id) { continue }
+        if !hiddenMessageIds.isEmpty {
+            var associated = SimpleDictionary<MessageId, Message>()
+            for (id, value) in message.associatedMessages where !hiddenMessageIds.contains(id) { associated[id] = value }
+            let attributes = message.attributes.map { attribute -> MessageAttribute in
+                if let reply = attribute as? ReplyMessageAttribute, hiddenMessageIds.contains(reply.messageId) {
+                    return ReplyMessageAttribute(messageId: reply.messageId, threadMessageId: reply.threadMessageId, quote: nil, isQuote: false, innerSubject: nil)
+                }
+                return attribute
+            }
+            message = Message(stableId: message.stableId, stableVersion: message.stableVersion, id: message.id, globallyUniqueId: message.globallyUniqueId, groupingKey: message.groupingKey, groupInfo: message.groupInfo, threadId: message.threadId, timestamp: message.timestamp, flags: message.flags, tags: message.tags, globalTags: message.globalTags, localTags: message.localTags, customTags: message.customTags, forwardInfo: message.forwardInfo, author: message.author, text: message.text, attributes: attributes, media: message.media, peers: message.peers, associatedMessages: associated, associatedMessageIds: message.associatedMessageIds, associatedMedia: message.associatedMedia, associatedThreadInfo: message.associatedThreadInfo, associatedStories: message.associatedStories)
+        }
         var isRead = entry.isRead
         
         var pinToTop = false

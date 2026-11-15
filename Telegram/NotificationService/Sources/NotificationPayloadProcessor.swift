@@ -342,8 +342,6 @@ final class NotificationServiceHandler {
                     }
                     //
 
-                    Logger.shared.log("NotificationService \(episode)", "Decrypted payload: \(payloadJson)")
-
                     var peerId: PeerId?
                     var messageId: MessageId.Id?
                     var storyId: Int32?
@@ -1068,6 +1066,11 @@ final class NotificationServiceHandler {
                                             var wasDisplayed = false
                                             if let messageId {
                                                 wasDisplayed = _internal_getMessageNotificationWasDisplayed(transaction: transaction, id: messageId)
+                                                if ConceptMessageFilterSettings.hideBlockedUsers,
+                                                   let authorId = transaction.getMessage(messageId)?.author?.id ?? authorUserId,
+                                                   let cached = transaction.getPeerCachedData(peerId: authorId) as? CachedUserData, cached.isBlocked {
+                                                    wasDisplayed = true
+                                                }
                                             }
                                             
                                             return wasDisplayed
@@ -1274,7 +1277,7 @@ final class NotificationServiceHandler {
                                                     content.resolvedEmojiFiles = resolvedEmojiFiles
                                                     var persistDisplay: Signal<Never, NoError> = .complete()
 
-                                                    Logger.shared.log("NotificationService \(episode)", "Updating content to \(content)")
+                                                    Logger.shared.log("NotificationService \(episode)", "Updating content")
 
                                                     if wasDisplayed {
                                                         content = NotificationContent(sgStatus: sgStatus, isLockedMessage: nil, isEmpty: true, isMentionOrReply: isMentionOrReply, chatId: chatId)
@@ -1786,7 +1789,7 @@ final class NotificationServiceHandler {
                                                 } |> ignoreValues
                                             }
 
-                                            Logger.shared.log("NotificationService \(episode)", "Updating content to \(content)")
+                                            Logger.shared.log("NotificationService \(episode)", "Updating content")
 
                                             deliverCurrentContent(content)
 
@@ -1879,7 +1882,7 @@ final class NotificationServiceHandler {
                                                 content.badge = Int(value.0)
                                             }
                                             Logger.shared.log("NotificationService \(episode)", "Unread count: \(value.0), isCurrentAccount: \(isCurrentAccount)")
-                                            Logger.shared.log("NotificationService \(episode)", "Updating content to \(content)")
+                                            Logger.shared.log("NotificationService \(episode)", "Updating content")
 
                                             deliverCurrentContent(content)
 
@@ -1916,7 +1919,7 @@ final class NotificationServiceHandler {
                                 
                                 let completeRemoval: () -> Void = {
                                     let content = NotificationContent(sgStatus: sgStatus, isLockedMessage: nil, isEmpty: true) // MARK: Swiftgram
-                                    Logger.shared.log("NotificationService \(episode)", "Updating content to \(content)")
+                                    Logger.shared.log("NotificationService \(episode)", "Updating content")
                                     
                                     deliverCurrentContent(content)
                                     
@@ -1972,7 +1975,7 @@ final class NotificationServiceHandler {
                                             }
 
                                             Logger.shared.log("NotificationService \(episode)", "Unread count: \(value.0), isCurrentAccount: \(isCurrentAccount)")
-                                            Logger.shared.log("NotificationService \(episode)", "Updating content to \(content)")
+                                            Logger.shared.log("NotificationService \(episode)", "Updating content")
 
                                             deliverCurrentContent(content)
 

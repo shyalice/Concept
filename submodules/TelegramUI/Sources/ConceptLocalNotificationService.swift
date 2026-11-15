@@ -10,6 +10,7 @@ final class ConceptLocalNotificationService {
     private weak var context: SharedApplicationContext?
     private let accounts = NotificationAccountSubscriptions<AccountRecordId>()
     private let observation = MetaDisposable()
+    private var readTrackers: [AccountRecordId: ConceptNotificationReadTracker] = [:]
     private var settings = InAppNotificationSettings.defaultSettings
     private var eligibleAccounts = Set<AccountRecordId>()
     private var leasedAccounts = Set<AccountRecordId>()
@@ -20,6 +21,7 @@ final class ConceptLocalNotificationService {
     init(context: SharedApplicationContext) {
         self.context = context
         let shared = context.sharedContext
+        conceptRemoveHiddenNotifications(sharedContext: shared)
         self.observation.set((combineLatest(queue: .mainQueue(),
             shared.activeAccountContexts,
             shared.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.inAppNotificationSettings]),
@@ -31,10 +33,18 @@ final class ConceptLocalNotificationService {
             let hidden = secrets.inactiveAccountIds()
             let contexts = Dictionary(uniqueKeysWithValues: active.accounts.filter { !hidden.contains($0.0) }.map { ($0.0, $0.1) })
             self.eligibleAccounts = Set(contexts.keys)
+            for id in Array(self.readTrackers.keys) where contexts[id] == nil { self.readTrackers.removeValue(forKey: id) }
+            for (id, account) in contexts where self.readTrackers[id] == nil {
+                self.readTrackers[id] = ConceptNotificationReadTracker(account: account)
+            }
             self.accounts.update(contexts.mapValues { ObjectIdentifier($0.account) }, subscribe: { id in
                 guard let account = contexts[id] else { return EmptyDisposable }
                 return (account.account.stateManager.notificationMessages
                 |> deliverOnMainQueue
+                |> beforeNext { [weak self] _ in
+                    self?.readTrackers[id]?.refresh()
+                    Queue.mainQueue().after(1.0) { [weak self] in self?.readTrackers[id]?.refresh() }
+                }
                 |> mapToQueue { [weak self, weak context] messageList -> Signal<Void, NoError> in
                     guard let self, let context, BackgroundNotificationSettings.isEnabled,
                           UIApplication.shared.applicationState != .active else { return .complete() }
@@ -55,10 +65,19 @@ final class ConceptLocalNotificationService {
         self.observers.append(center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
             self?.isInBackground = false
             self?.updateNetworkLease()
+            if let shared = self?.context?.sharedContext { conceptRemoveHiddenNotifications(sharedContext: shared) }
+            self?.refreshReadNotifications()
+        })
+        self.observers.append(center.addObserver(forName: LocalNotificationRoute.requestsChanged, object: nil, queue: .main) { [weak self] _ in
+            self?.refreshReadNotifications()
         })
         self.observers.append(center.addObserver(forName: BackgroundNotificationSettings.changed, object: nil, queue: .main) { [weak self] _ in
             self?.updateNetworkLease()
         })
+    }
+
+    private func refreshReadNotifications() {
+        for tracker in self.readTrackers.values { tracker.refresh() }
     }
 
     private func updateNetworkLease() {

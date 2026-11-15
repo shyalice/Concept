@@ -171,12 +171,15 @@ private func deliverBackgroundCandidate(_ candidate: EngineBackgroundNotificatio
                     _ = account.engine.messages.releaseBackgroundNotificationClaim(id: id, token: claim).startStandalone()
                 }
                 center.add(request) { error in
+                    Queue.mainQueue().async {
                     guard gate.commit() else { remove(); release(); return }
-                    if error == nil && BackgroundNotificationSettings.isEnabled {
+                    if error == nil { NotificationCenter.default.post(name: LocalNotificationRoute.requestsChanged, object: nil) }
+                    if error == nil && BackgroundNotificationSettings.isEnabled && conceptNotificationTargetIsVisible(accountId: account.account.id, peerId: id.peerId, sharedContext: shared) {
                         work.set(account.engine.messages.commitBackgroundNotificationClaim(id: id, token: claim).start(completed: { subscriber.putNext(true); subscriber.putCompletion() }))
                     } else {
                         remove()
                         work.set(account.engine.messages.releaseBackgroundNotificationClaim(id: id, token: claim).start(completed: { subscriber.putNext(false); subscriber.putCompletion() }))
+                    }
                     }
                 }
                 return ActionDisposable {

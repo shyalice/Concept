@@ -8,6 +8,7 @@ import SGSimpleSettings
 import Foundation
 import UIKit
 import UserNotifications
+import Intents
 import AsyncDisplayKit
 import TelegramCore
 import SwiftSignalKit
@@ -589,6 +590,12 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                 let newlyHiddenPeerIds = next.inactiveSecretChatPeerIdsForAllAccounts().subtracting(previous.inactiveSecretChatPeerIdsForAllAccounts())
 
                 let _ = strongSelf.currentConceptSecretPasscodes.swap(next)
+                if previous != next, strongSelf.applicationBindings.isMainApp {
+                    conceptRemoveHiddenNotifications(sharedContext: strongSelf)
+                    if !newlyHiddenAccountIds.isEmpty || !newlyHiddenPeerIds.isEmpty {
+                        INInteraction.deleteAll(completion: nil)
+                    }
+                }
                 strongSelf.inactiveAccountsUpdated(next.inactiveAccountIds())
 
                 if (!newlyHiddenAccountIds.isEmpty || !newlyHiddenPeerIds.isEmpty) && strongSelf.applicationBindings.isMainApp {

@@ -1963,6 +1963,25 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
         let startTime = CFAbsoluteTimeGetCurrent()
         var measure_isFirstTime = true
         let messageViewQueue = Queue.mainQueue()
+        let unfilteredHistoryUpdates = historyViewUpdate
+        historyViewUpdate = combineLatest(unfilteredHistoryUpdates, ConceptMessageFilterSettings.hideBlockedUsersSignal)
+        |> mapToSignal { update, enabled -> Signal<(ChatHistoryViewUpdate, Int, ChatHistoryLocationInput?, ClosedRange<Int32>?, Set<MessageId>), NoError> in
+            guard enabled, case let .HistoryView(view, _, _, _, _, _, _) = update.0 else { return .single(update) }
+            var messages = view.entries.map(\.message)
+            for entry in view.entries {
+                for (_, associated) in entry.message.associatedMessages { messages.append(associated) }
+            }
+            let authors = Set(messages.compactMap { $0.author?.id })
+            guard !authors.isEmpty else { return .single(update) }
+            return context.engine.data.subscribe(EngineDataMap(authors.map { TelegramEngine.EngineData.Item.Peer.IsBlocked(id: $0) }))
+            |> map { blocked in
+                let hidden = Set(messages.filter { message in
+                    guard let authorId = message.author?.id else { return false }
+                    return blocked[authorId]?.knownValue == true
+                }.map(\.id))
+                return (update.0, update.1, update.2, update.3, update.4.union(hidden))
+            }
+        }
         let historyViewTransitionDisposable = (combineLatest(queue: messageViewQueue,
             self.context.sharedContext.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.translationSettings]) |> take(1), // MARK: Swiftgram
             historyViewUpdate |> debug_measureTimeToFirstEvent(label: "chatHistoryNode_historyViewUpdate"),
@@ -2304,6 +2323,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                     skipViewOnceMedia: mode != .bubbles,
                     pendingUnpinnedAllMessages: pendingUnpinnedAllMessages,
                     pendingRemovedMessages: pendingRemovedMessages,
+                    hiddenMessageIds: update.4,
                     associatedData: associatedData,
                     updatingMedia: updatingMedia,
                     customChannelDiscussionReadState: customChannelDiscussionReadState,

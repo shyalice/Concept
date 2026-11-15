@@ -13,6 +13,7 @@ swift_library(
         "Sources/*.swift",
     ]),
     deps = sgdeps + [
+        "//submodules/ConceptNotifications:ConceptNotifications",
         "//submodules/Postbox:Postbox",
         "//submodules/TelegramCore:TelegramCore",
         "//submodules/BuildConfig:BuildConfig",

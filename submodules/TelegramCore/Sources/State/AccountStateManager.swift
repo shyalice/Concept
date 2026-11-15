@@ -1518,6 +1518,10 @@ public func messagesForNotification(transaction: Transaction, id: MessageId, alw
         Logger.shared.log("AccountStateManager", "notification message doesn't exist")
         return ([], false, defaultCloudPeerNotificationSound, false, nil)
     }
+    if ConceptMessageFilterSettings.hideBlockedUsers, let authorId = message.author?.id,
+       let cached = transaction.getPeerCachedData(peerId: authorId) as? CachedUserData, cached.isBlocked {
+        return ([], false, defaultCloudPeerNotificationSound, false, nil)
+    }
 
     var notify = true
     var muted = false

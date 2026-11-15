@@ -1,3 +1,5 @@
+import SGSimpleSettings
+import SGAppGroupIdentifier
 import Foundation
 import UIKit
 import UserNotifications
@@ -123,16 +125,22 @@ private func postNextConceptLocalNotification(items: [EngineMessage], index: Int
             }
         }
         let preparation: Signal<Bool, NoError> = preparations.isEmpty ? .single(true) : (combineLatest(preparations) |> map { _ in true })
-        work.add((preparation
-        |> timeout(2.0, queue: .mainQueue(), alternate: .single(false))
+        let participantCount = account.engine.data.get(TelegramEngine.EngineData.Item.Peer.ParticipantCount(id: id.peerId))
+        work.add((combineLatest(preparation, participantCount)
+        |> timeout(2.0, queue: .mainQueue(), alternate: .single((false, nil)))
         |> take(1)
-        |> deliverOnMainQueue).start(next: { _ in
-            guard !state.isCancelled, BackgroundNotificationSettings.isEnabled, UIApplication.shared.applicationState != .active else {
+        |> mapToSignal { _, participantCount -> Signal<(Int?, Bool), NoError> in
+            guard ConceptMessageFilterSettings.hideBlockedUsers, let author = candidate.message.author else { return .single((participantCount, false)) }
+            return account.engine.data.get(TelegramEngine.EngineData.Item.Peer.IsBlocked(id: author.id))
+            |> map { (participantCount, $0.knownValue == true) }
+        }
+        |> deliverOnMainQueue).start(next: { participantCount, authorIsBlocked in
+            guard !state.isCancelled, !authorIsBlocked, BackgroundNotificationSettings.isEnabled, UIApplication.shared.applicationState != .active else {
                 let _ = account.engine.messages.releaseBackgroundNotificationClaim(id: id, token: claim).startStandalone()
                 finish()
                 return
             }
-            guard let notification = conceptLocalNotificationContent(candidate: candidate, account: account, settings: settings, locked: locked) else {
+            guard let notification = conceptLocalNotificationContent(candidate: candidate, account: account, settings: settings, locked: locked, participantCount: participantCount) else {
                 let _ = account.engine.messages.releaseBackgroundNotificationClaim(id: id, token: claim).startStandalone()
                 finish()
                 return
@@ -140,7 +148,8 @@ private func postNextConceptLocalNotification(items: [EngineMessage], index: Int
             let request = UNNotificationRequest(identifier: notification.identifier, content: notification.content, trigger: nil)
             UNUserNotificationCenter.current().add(request) { error in
                 Queue.mainQueue().async {
-                    if error == nil && BackgroundNotificationSettings.isEnabled && !state.isCancelled {
+                    if error == nil { NotificationCenter.default.post(name: LocalNotificationRoute.requestsChanged, object: nil) }
+                    if error == nil && BackgroundNotificationSettings.isEnabled && !state.isCancelled && conceptNotificationTargetIsVisible(accountId: account.account.id, peerId: id.peerId, sharedContext: account.sharedContext) {
                         let _ = account.engine.messages.commitBackgroundNotificationClaim(id: id, token: claim).startStandalone()
                     } else {
                         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [notification.identifier])
@@ -160,7 +169,7 @@ struct ConceptLocalNotificationRequest {
     let content: UNNotificationContent
 }
 
-func conceptLocalNotificationContent(candidate: EngineBackgroundNotificationCandidate, account: AccountContext, settings: InAppNotificationSettings, locked: Bool) -> ConceptLocalNotificationRequest? {
+func conceptLocalNotificationContent(candidate: EngineBackgroundNotificationCandidate, account: AccountContext, settings: InAppNotificationSettings, locked: Bool, participantCount: Int? = nil) -> ConceptLocalNotificationRequest? {
     let message = candidate.message
     let id = message.id
     let secrets = account.sharedContext.currentConceptSecretPasscodes.with { $0 }
@@ -185,6 +194,26 @@ func conceptLocalNotificationContent(candidate: EngineBackgroundNotificationCand
         return nil
     }
 
+    let isPinned = message.media.contains { media in
+        guard let action = media as? TelegramMediaAction else { return false }
+        if case .pinnedMessageUpdated = action.action { return true }
+        return false
+    }
+    let isMentionOrReply = message.tags.contains(.unseenPersonalMessage) || message.attributes.contains { attribute in
+        guard let reply = attribute as? ReplyMessageAttribute,
+              let replied = message.associatedMessages[reply.messageId] else { return false }
+        return replied.author?.id == account.account.peerId
+    }
+    let defaults = UserDefaults(suiteName: sgAppGroupIdentifier())
+    let policy = NotificationPresentationPolicy(enabled: SGSimpleSettings.shared.ephemeralStatus > 1,
+        isPinned: isPinned, isMentionOrReply: isMentionOrReply,
+        chatId: String(id.peerId.id._internalGetInt64Value()),
+        pinnedAction: defaults?.string(forKey: "pinnedMessageNotifications") ?? "default",
+        pinnedExceptions: defaults?.dictionary(forKey: "pinnedMessageNotificationsExceptions") as? [String: String] ?? [:],
+        mentionAction: defaults?.string(forKey: "mentionsAndRepliesNotifications") ?? "default",
+        mentionExceptions: defaults?.dictionary(forKey: "mentionsAndRepliesNotificationsExceptions") as? [String: String] ?? [:])
+    guard !policy.suppress else { return nil }
+
     let isChannel: Bool
     if let channel = message.peers[id.peerId] as? TelegramChannel, case .broadcast = channel.info {
         isChannel = true
@@ -203,9 +232,10 @@ func conceptLocalNotificationContent(candidate: EngineBackgroundNotificationCand
     let chatName = conceptNotificationPeerName(displayPeer, strings: strings, nameDisplayOrder: presentationData.nameDisplayOrder)
     let authorPeer = message.author
     let authorName = authorPeer.map { conceptNotificationPeerName($0, strings: strings, nameDisplayOrder: presentationData.nameDisplayOrder) }
+    let route = LocalNotificationRoute(accountId: account.account.id.int64, peerId: id.peerId.toInt64(), messageNamespace: id.namespace, messageId: id.id, threadId: message.threadId, supportsTopics: peer._asPeer().isForumOrMonoForum)
 
     let conversationName: String
-    if isGroup, let topicTitle = candidate.topicTitle, !topicTitle.isEmpty {
+    if route.topicId != nil, let topicTitle = candidate.topicTitle, !topicTitle.isEmpty {
         conversationName = "\(chatName) · \(topicTitle)"
     } else {
         conversationName = chatName
@@ -240,11 +270,9 @@ func conceptLocalNotificationContent(candidate: EngineBackgroundNotificationCand
     var content = UNMutableNotificationContent()
     content.title = title
     content.body = body
+    content.subtitle = isGroup && showContents ? (authorName ?? "") : ""
     content.categoryIdentifier = locked ? "unknown" : (isChannel ? "c" : (isGroup ? "gr" : "r"))
-    content.threadIdentifier = "\(account.account.id.int64)_\(id.peerId.toInt64())"
-    if let threadId = message.threadId {
-        content.threadIdentifier += "_\(threadId)"
-    }
+    content.threadIdentifier = route.conversationIdentifier
     if candidate.sound != .none {
         if let customSound = settings.customSound, !customSound.isEmpty {
             content.sound = UNNotificationSound(named: UNNotificationSoundName(rawValue: customSound))
@@ -260,16 +288,8 @@ func conceptLocalNotificationContent(candidate: EngineBackgroundNotificationCand
         }
     }
 
-    var userInfo: [AnyHashable: Any] = [
-        "accountId": "\(account.account.id.int64)",
-        "peerId": "\(id.peerId.toInt64())",
-        "msg_id": "\(id.id)",
-        "messageId.namespace": id.namespace,
-        "messageId.id": id.id
-    ]
-    if let threadId = message.threadId {
-        userInfo["threadId"] = threadId as Int64
-    }
+    if policy.silence { content.sound = nil }
+    let userInfo = route.userInfo
     content.userInfo = userInfo
 
     if showContents {
@@ -289,7 +309,8 @@ func conceptLocalNotificationContent(candidate: EngineBackgroundNotificationCand
 
     let conversationIdentifier = content.threadIdentifier
     let categoryIdentifier = content.categoryIdentifier
-    if showContents, #available(iOS 15.0, *) {
+    let groupCount = participantCount ?? (message.peers[id.peerId] as? TelegramGroup).map { Int($0.participantCount) }
+    if showContents, (!isGroup || groupCount.map { $0 > 1 } == true), #available(iOS 15.0, *) {
         let senderPeer = isChannel ? displayPeer : (authorPeer ?? displayPeer)
         let senderImage = conceptNotificationAvatarFile(account: account, peer: senderPeer)
             .flatMap { try? Data(contentsOf: $0) }.map { INImage(imageData: $0) }
@@ -303,7 +324,8 @@ func conceptLocalNotificationContent(candidate: EngineBackgroundNotificationCand
             isMe: false,
             suggestionType: .none
         )
-        // The sender and current user are implicit, not recipients of an incoming intent.
+        // Incoming intents infer the current user. Count metadata preserves group
+        // semantics without inventing recipients or fetching a member list.
         let intent = INSendMessageIntent(
             recipients: nil,
             outgoingMessageType: .outgoingMessageText,
@@ -314,6 +336,18 @@ func conceptLocalNotificationContent(candidate: EngineBackgroundNotificationCand
             sender: senderPerson,
             attachments: nil
         )
+        let metadata = INSendMessageIntentDonationMetadata()
+        if isGroup, let count = groupCount, count > 1 {
+            metadata.recipientCount = count - 1
+        }
+        metadata.mentionsCurrentUser = message._asMessage().tags.contains(.unseenPersonalMessage)
+        for attribute in message.attributes {
+            if let reply = attribute as? ReplyMessageAttribute,
+               let replied = message._asMessage().associatedMessages[reply.messageId] {
+                metadata.isReplyToCurrentUser = replied.author?.id == account.account.peerId
+            }
+        }
+        intent.donationMetadata = metadata
         if let senderImage {
             intent.setImage(senderImage, forParameterNamed: \.sender)
         }
@@ -323,7 +357,9 @@ func conceptLocalNotificationContent(candidate: EngineBackgroundNotificationCand
         }
         let interaction = INInteraction(intent: intent, response: nil)
         interaction.direction = .incoming
-        interaction.donate(completion: nil)
+        if !secrets.allHidableAccountIds().contains(account.account.id), !secrets.allSecretChatPeerIds(accountId: account.account.id).contains(id.peerId) {
+            interaction.donate(completion: nil)
+        }
         if let updated = try? content.updating(from: intent).mutableCopy() as? UNMutableNotificationContent {
             content = updated
         }
@@ -336,8 +372,40 @@ func conceptLocalNotificationContent(candidate: EngineBackgroundNotificationCand
     content.userInfo = userInfo
     content.threadIdentifier = conversationIdentifier
     content.categoryIdentifier = categoryIdentifier
-    let identifier = "concept_local_\(account.account.id.int64)_\(id.peerId.toInt64())_\(id.namespace)_\(id.id)"
-    return ConceptLocalNotificationRequest(identifier: identifier, content: content)
+    return ConceptLocalNotificationRequest(identifier: route.identifier, content: content)
+}
+
+func conceptNotificationTargetIsVisible(accountId: AccountRecordId, peerId: EnginePeer.Id?, sharedContext: SharedAccountContext, requiresUnlocked: Bool = false) -> Bool {
+    let secrets = sharedContext.currentConceptSecretPasscodes.with { $0 }.withCheckedTimeoutUsingLockStateFile(rootPath: sharedContext.basePath)
+    guard !secrets.inactiveAccountIds().contains(accountId) else { return false }
+    if let peerId, secrets.inactiveSecretChatPeerIds(accountId: accountId).contains(peerId) { return false }
+    if requiresUnlocked,
+       let data = try? Data(contentsOf: URL(fileURLWithPath: appLockStatePath(rootPath: sharedContext.basePath))),
+       let state = try? JSONDecoder().decode(LockState.self, from: data), isAppLocked(state: state) { return false }
+    return true
+}
+
+func conceptRemoveHiddenNotifications(sharedContext: SharedAccountContext) {
+    let center = UNUserNotificationCenter.current()
+    func shouldRemove(_ content: UNNotificationContent) -> Bool {
+        let payload = content.userInfo
+        func int64(_ key: String) -> Int64? {
+            return (payload[key] as? String).flatMap(Int64.init) ?? (payload[key] as? NSNumber)?.int64Value
+        }
+        guard let accountId = int64("accountId") else { return false }
+        let peerId = int64("peerId").map(EnginePeer.Id.init)
+        return !conceptNotificationTargetIsVisible(accountId: AccountRecordId(rawValue: accountId), peerId: peerId, sharedContext: sharedContext)
+    }
+    center.getPendingNotificationRequests { requests in
+        Queue.mainQueue().async {
+            center.removePendingNotificationRequests(withIdentifiers: requests.filter { shouldRemove($0.content) }.map(\.identifier))
+        }
+    }
+    center.getDeliveredNotifications { notifications in
+        Queue.mainQueue().async {
+            center.removeDeliveredNotifications(withIdentifiers: notifications.filter { shouldRemove($0.request.content) }.map { $0.request.identifier })
+        }
+    }
 }
 
 private func conceptNotificationPeerName(_ peer: EnginePeer, strings: PresentationStrings, nameDisplayOrder: PresentationPersonNameOrder) -> String {
