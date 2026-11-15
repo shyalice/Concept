@@ -6306,10 +6306,10 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                 for section in self.regularSections.values {
                     section.updateBackdrop(tintColor: tintColor, targetColor: self.presentationData.theme.list.itemBlocksBackgroundColor, fraction: fraction, isDark: isDark, transition: transition)
                 }
-                self.paneContainerNode.profileSurface = self.conceptDecorativeSurface && fraction < 1.0 ? (UIColor.clear, true) : nil
+                self.paneContainerNode.profileGlassIsDark = self.conceptDecorativeSurface && fraction < 1.0 ? true : nil
                 self.paneContainerNode.profileMaterial = (tintColor, self.presentationData.theme.list.itemBlocksBackgroundColor, fraction, isDark)
             } else {
-                self.paneContainerNode.profileSurface = nil
+                self.paneContainerNode.profileGlassIsDark = nil
                 self.paneContainerNode.profileMaterial = nil
             }
 

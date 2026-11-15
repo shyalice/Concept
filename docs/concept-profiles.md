@@ -71,8 +71,9 @@ the prepared blur; unavailable images should retain a stable placeholder until a
 
 The accepted Contacts card material is unchanged. The music strip uses the existing interactive
 GlassBarButtonComponent, with its content inside the native glass control; the old whole-plate scale
-and opacity press effects remain disabled. Decorative profile tabs have no white tint and return to
-the ordinary panel at full theme collapse. Members panes get the same material behind their list,
+and opacity press effects remain disabled. Decorative profile tabs use the same regular dark glass recipe as music and navigation
+controls, avoiding the clear-style glass brightness wash. At full collapse they return to the
+ordinary application-theme panel. Members panes get the same material behind their list,
 positioned from the existing list-background frame rather than from row snapshots.
 
 The gallery frame, image size and native reflection transforms remain at the restored baseline.
@@ -86,3 +87,9 @@ The actual mask class was exercised in an isolated iOS 27 VM test. External vali
 `profile-photo-fade-frames/sheet.jpg` shows samples #0–#8 (t=0.656–3.123): the head and upper photo keep
 their geometry through scale/rounding changes; the new mask removes the sharp tail retained by the old
 mask. These are sparse VM captures of the isolated component, not a frame-rate or full-profile test.
+
+A native iOS 27 glass-recipe comparison captures the old clear-style strip beside the music/Edit
+recipe and the corrected regular strip. Samples #0–#7 (t=0.000–2.748) in external validation
+`profile-tabs-glass-frames/sheet.jpg` show the old brighter wash while the corrected strip matches
+the controls through changing backdrop colors. This compares the material recipes, not the full
+profile, selected-tab lens, or scroll transition.

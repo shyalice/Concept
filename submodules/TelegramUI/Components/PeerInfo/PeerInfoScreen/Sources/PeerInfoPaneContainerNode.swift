@@ -607,7 +607,7 @@ final class PeerInfoPaneContainerNode: ASDisplayNode, ASGestureRecognizerDelegat
     
     private let tabsBackgroundContainer: UIView
     private let tabsBackgroundView: GlassBackgroundView
-    var profileSurface: (color: UIColor, isDark: Bool)?
+    var profileGlassIsDark: Bool?
     var profileMaterial: (tintColor: UIColor, targetColor: UIColor, fraction: CGFloat, isDark: Bool)? {
         didSet { self.updateMembersMaterial() }
     }
@@ -1439,8 +1439,7 @@ final class PeerInfoPaneContainerNode: ASDisplayNode, ASGestureRecognizerDelegat
 
         
         transition.updateFrame(view: self.tabsBackgroundView, frame: CGRect(origin: CGPoint(), size: tabContainerFrame.size))
-        let tabsTint: GlassBackgroundView.TintColor = self.profileSurface.map { .init(kind: .custom(style: .clear, color: $0.color)) } ?? .init(kind: .panel)
-        self.tabsBackgroundView.update(size: tabContainerFrame.size, cornerRadius: tabContainerFrame.height * 0.5, isDark: self.profileSurface?.isDark ?? presentationData.theme.overallDarkAppearance, tintColor: tabsTint, transition: ComponentTransition(transition))
+        self.tabsBackgroundView.update(size: tabContainerFrame.size, cornerRadius: tabContainerFrame.height * 0.5, isDark: self.profileGlassIsDark ?? presentationData.theme.overallDarkAppearance, tintColor: .init(kind: .panel), transition: ComponentTransition(transition))
         
         ComponentTransition(transition).setAlpha(view: self.tabsBackgroundContainer, alpha: tabsAlpha)
         
