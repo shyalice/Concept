@@ -72,8 +72,11 @@ final class CameraDeviceContext {
         let audio = cameraAttachesAudio(captureMode: captureMode, configuredAudio: audio)
                 
         self.device.configure(for: session, position: position, dual: !self.exclusive || self.additional, switchAudio: switchAudio)
-        self.device.configureDeviceFormat(maxDimensions: self.maxDimensions(additional: self.additional, preferWide: preferWide), maxFramerate: self.preferredMaxFrameRate(useLower: preferLowerFramerate), captureMode: captureMode)
+        self.device.configureDeviceFormat(maxDimensions: self.maxDimensions(additional: self.additional, preferWide: preferWide), maxFramerate: self.preferredMaxFrameRate(useLower: preferLowerFramerate), captureMode: captureMode, isRoundVideo: self.isRoundVideo, requiresMultiCam: !self.exclusive)
         self.input.configure(for: session, device: self.device, audio: audio && switchAudio)
+        if self.isRoundVideo, let input = self.input.videoInput {
+            input.videoMinFrameDurationOverride = CMTime(seconds: 1.0 / self.device.fps, preferredTimescale: 60_000)
+        }
         self.output.configure(for: session, device: self.device, input: self.input, previewView: previewView, audio: audio && switchAudio, photo: photo, metadata: metadata, captureMode: captureMode)
         
         self.output.configureVideoStabilization()
@@ -90,6 +93,7 @@ final class CameraDeviceContext {
     }
     
     private func maxDimensions(additional: Bool, preferWide: Bool) -> CMVideoDimensions {
+        if self.isRoundVideo && !self.exclusive { return CMVideoDimensions(width: 640, height: 480) }
         if additional || preferWide {
             return CMVideoDimensions(width: 1920, height: 1440)
         }
@@ -97,6 +101,7 @@ final class CameraDeviceContext {
     }
 
     private func preferredMaxFrameRate(useLower: Bool) -> Double {
+        if self.isRoundVideo { return 60.0 }
         return useLower || !self.exclusive ? 30.0 : 60.0
     }
 

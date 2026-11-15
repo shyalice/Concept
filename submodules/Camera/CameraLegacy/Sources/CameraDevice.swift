@@ -66,7 +66,7 @@ final class CameraDevice {
     
     private(set) var photoDimensions: CMVideoDimensions?
     
-    func configureDeviceFormat(maxDimensions: CMVideoDimensions, maxFramerate: Double, captureMode: CameraCaptureMode? = nil) {
+    func configureDeviceFormat(maxDimensions: CMVideoDimensions, maxFramerate: Double, captureMode: CameraCaptureMode? = nil, isRoundVideo: Bool = false, requiresMultiCam: Bool = false) {
         guard let device = self.videoDevice else {
             return
         }
@@ -83,8 +83,21 @@ final class CameraDevice {
             }
             
             let rule = cameraFormatRule(captureMode: captureMode, legacyMaxDimensions: CameraFormatDescriptor.Dimensions(width: maxDimensions.width, height: maxDimensions.height))
-            if let bestDescriptor = cameraPreferredFormat(formats: descriptors, rule: rule, maxFramerate: maxFramerate) {
-                let bestFormat = formats[bestDescriptor.index]
+            let selectedIndex: Int?
+            if isRoundVideo {
+                let roundFormats = formats.enumerated().map { index, format -> CameraRoundVideoFormat in
+                    let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+                    return CameraRoundVideoFormat(index: index, width: dimensions.width, height: dimensions.height,
+                        isVideoRange420: descriptors[index].isVideoRange420, supportsMultiCam: format.isMultiCamSupported,
+                        frameRateRanges: format.videoSupportedFrameRateRanges.map { $0.minFrameRate ... $0.maxFrameRate })
+                }
+                selectedIndex = cameraPreferredRoundVideoFormat(formats: roundFormats, maxWidth: maxDimensions.width, maxHeight: maxDimensions.height, requestedFrameRate: maxFramerate, requiresMultiCam: requiresMultiCam)
+            } else {
+                selectedIndex = cameraPreferredFormat(formats: descriptors, rule: rule, maxFramerate: maxFramerate)?.index
+            }
+            if let selectedIndex {
+                let bestDescriptor = descriptors[selectedIndex]
+                let bestFormat = formats[selectedIndex]
                 device.activeFormat = bestFormat
                 
                 if case .photo = rule, let photoDimensions = cameraPreferredPhotoDimensions(for: bestDescriptor) {
@@ -105,6 +118,10 @@ final class CameraDevice {
             #endif
             
             if let targetFPS = device.actualFPS(maxFramerate) {
+                self.fps = targetFPS.fps
+                if #available(iOS 18.0, *), device.activeFormat.isAutoVideoFrameRateSupported, device.isAutoVideoFrameRateEnabled {
+                    device.isAutoVideoFrameRateEnabled = false
+                }
                 device.activeVideoMinFrameDuration = targetFPS.duration
                 device.activeVideoMaxFrameDuration = targetFPS.duration
             }
@@ -152,6 +169,9 @@ final class CameraDevice {
         }
         self.fps = targetFPS.fps
         self.transaction(device) { device in
+            if #available(iOS 18.0, *), device.activeFormat.isAutoVideoFrameRateSupported, device.isAutoVideoFrameRateEnabled {
+                device.isAutoVideoFrameRateEnabled = false
+            }
             device.activeVideoMinFrameDuration = targetFPS.duration
             device.activeVideoMaxFrameDuration = targetFPS.duration
         }

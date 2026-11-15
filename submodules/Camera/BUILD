@@ -73,3 +73,15 @@ swift_test(
         "-warnings-as-errors",
     ],
 )
+
+# Foundation-only cadence policy tests run on the macOS build host.
+swift_test(
+    name = "CameraCadenceTests",
+    srcs = [
+        "Sources/CameraFrameRate.swift",
+        "Sources/CameraRoundVideoFormat.swift",
+        "Tests/CameraFrameRateTests.swift",
+        "Tests/CameraRoundVideoFormatTests.swift",
+    ],
+    copts = ["-warnings-as-errors"],
+)

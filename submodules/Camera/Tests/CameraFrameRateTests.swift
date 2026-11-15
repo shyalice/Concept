@@ -1,5 +1,7 @@
 import XCTest
+#if SWIFT_PACKAGE
 @testable import Camera
+#endif
 
 final class CameraFrameRateTests: XCTestCase {
     func testSixtyFpsCanBeInALaterRange() {
