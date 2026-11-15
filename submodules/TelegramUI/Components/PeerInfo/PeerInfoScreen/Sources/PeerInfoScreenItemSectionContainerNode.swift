@@ -10,6 +10,7 @@ final class PeerInfoScreenItemSectionContainerNode: ASDisplayNode {
     private let cardNode = ASDisplayNode()
     private let material = ConceptProfileMaterialView()
     private var hasBackdropAppearance = false
+    private var materialLayoutGeneration: UInt = 0
     private var lastLayout: (AccountContext, CGFloat, UIEdgeInsets, Bool, [PeerInfoScreenItem], Bool)?
 
     func updateBackdrop(tintColor: UIColor, targetColor: UIColor, fraction: CGFloat, isDark: Bool, transition: ContainedViewLayoutTransition) {
@@ -154,11 +155,19 @@ final class PeerInfoScreenItemSectionContainerNode: ASDisplayNode {
         
         transition.updateFrame(node: self.itemContainerNode, frame: CGRect(origin: CGPoint(), size: CGSize(width: width, height: contentHeight)))
         transition.updateFrame(node: self.backgroundNode, frame: CGRect(origin: CGPoint(x: 0.0, y: contentWithBackgroundOffset), size: CGSize(width: width, height: max(0.0, contentWithBackgroundHeight - contentWithBackgroundOffset))))
-        // A single clipped container owns both the fill and its rows. Bounds
-        // and children share the same transition; no independently timed mask.
-        transition.updateFrame(node: self.cardNode, frame: self.backgroundNode.frame)
-        transition.updateFrame(view: self.material, frame: CGRect(origin: .zero, size: self.backgroundNode.frame.size))
-        self.material.updateLayout(size: self.backgroundNode.frame.size, radius: 24.0, transition: transition)
+        // Animate the one outer clip, keeping the blur's sampling area large enough
+        // for both heights. Resizing a live backdrop during this animation flashes a band.
+        self.materialLayoutGeneration &+= 1
+        let generation = self.materialLayoutGeneration
+        let materialSize = self.backgroundNode.frame.size
+        let samplingSize = CGSize(width: materialSize.width, height: transition.isAnimated ? max(materialSize.height, self.material.bounds.height) : materialSize.height)
+        self.material.frame = CGRect(origin: .zero, size: samplingSize)
+        self.material.updateLayout(size: samplingSize, radius: 0.0, transition: .immediate)
+        transition.updateFrame(node: self.cardNode, frame: self.backgroundNode.frame, completion: { [weak self] _ in
+            guard let self, self.materialLayoutGeneration == generation else { return }
+            self.material.frame = CGRect(origin: .zero, size: materialSize)
+            self.material.updateLayout(size: materialSize, radius: 0.0, transition: .immediate)
+        })
         if !self.hasBackdropAppearance {
             self.material.updateAppearance(color: presentationData.theme.list.itemModalBlocksBackgroundColor, isDark: presentationData.theme.overallDarkAppearance)
         }

@@ -2846,7 +2846,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                                 self?.displaySavedMusic?()
                             },
                             animateAlpha: false,
-                            animateScale: true,
+                            animateScale: !usesProfileSurface,
                             rasterizeOnScaleAnimation: false,
                             // Its shown text; nothing while the track's title is still loading.
                             accessibility: ComponentAccessibility(label: musicString.string.trimmingCharacters(in: .whitespacesAndNewlines), isHidden: musicString.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

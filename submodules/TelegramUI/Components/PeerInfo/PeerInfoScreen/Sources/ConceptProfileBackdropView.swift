@@ -14,15 +14,18 @@ final class ConceptProfileBackdropView: UIView {
     private let cover = ComponentView<Empty>()
     private let photoContainer = UIView()
     private let photo = UIImageView()
+    private let continuation = UIImageView()
     private let shade = UIView()
     private final class PreparedPhoto: NSObject {
         weak var source: UIImage?
         let image: UIImage
+        let continuation: UIImage
         let color: UIColor
         let luminance: CGFloat
-        init(source: UIImage, image: UIImage, color: UIColor, luminance: CGFloat) {
+        init(source: UIImage, image: UIImage, continuation: UIImage, color: UIColor, luminance: CGFloat) {
             self.source = source
             self.image = image
+            self.continuation = continuation
             self.color = color
             self.luminance = luminance
         }
@@ -38,6 +41,7 @@ final class ConceptProfileBackdropView: UIView {
     private let tone = CAGradientLayer()
     private weak var sourcePhoto: UIImage?
     private var photoGeneration: UInt = 0
+    private var photoAspectRatio: CGFloat = 1.0
     private var photoLuminance: CGFloat = 0.35
     private var coverLuminance: CGFloat = 0.35
     private var expanded = false
@@ -55,8 +59,10 @@ final class ConceptProfileBackdropView: UIView {
         self.isUserInteractionEnabled = false
         self.accessibilityElementsHidden = true
         self.clipsToBounds = true
-        self.photo.contentMode = .scaleAspectFill
+        self.photo.contentMode = .scaleToFill
         self.photo.clipsToBounds = true
+        self.continuation.contentMode = .scaleToFill
+        self.photoContainer.addSubview(self.continuation)
         self.photoContainer.addSubview(self.photo)
         self.tone.startPoint = CGPoint(x: 0.5, y: 0.0)
         self.tone.endPoint = CGPoint(x: 0.5, y: 1.0)
@@ -118,15 +124,20 @@ final class ConceptProfileBackdropView: UIView {
             self.coverColor = nil
         }
         self.dominantColor = expanded || !self.hasCover ? self.photoColor : (self.coverColor ?? self.photoColor)
-        if enabled, self.sourcePhoto !== image { self.preparePhoto(image) }
+        let aspectRatio = avatarFrame.width > 0.0 && avatarFrame.height > 0.0 ? avatarFrame.width / avatarFrame.height : 1.0
+        if enabled, self.sourcePhoto !== image || (expanded && abs(self.photoAspectRatio - aspectRatio) > 0.001) {
+            self.preparePhoto(image, aspectRatio: aspectRatio)
+        }
         self.updateTone(animated: transition.isAnimated)
 
         let bounds = CGRect(origin: CGPoint(), size: size)
         transition.updateFrame(view: self.photoContainer, frame: bounds)
-        transition.updateFrame(view: self.photo, frame: bounds)
+        transition.updateFrame(view: self.photo, frame: avatarFrame)
+        let continuationY = avatarFrame.maxY - UIScreenPixel
+        transition.updateFrame(view: self.continuation, frame: CGRect(x: avatarFrame.minX, y: continuationY, width: avatarFrame.width, height: max(0.0, size.height - continuationY)))
         transition.updateFrame(view: self.shade, frame: bounds)
         transition.updateFrame(view: self.themeFade, frame: bounds)
-        transition.updateAlpha(layer: self.shade.layer, alpha: visible && (expanded || self.hasCover) ? 0.035 : 0.0)
+        transition.updateAlpha(layer: self.shade.layer, alpha: visible && (expanded || self.hasCover) ? 0.055 : 0.0)
         // The sharp gallery fades into the cached, strongly blurred color field.
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -181,14 +192,15 @@ final class ConceptProfileBackdropView: UIView {
         }
     }
 
-    private func preparePhoto(_ image: UIImage?) {
+    private func preparePhoto(_ image: UIImage?, aspectRatio: CGFloat) {
         // A paging placeholder must not erase the previous color field while
         // the next still image is loading.
         guard let image else { return }
         self.photoGeneration &+= 1
         let generation = self.photoGeneration
         self.sourcePhoto = image
-        let cacheKey = String(describing: ObjectIdentifier(image)) as NSString
+        self.photoAspectRatio = aspectRatio
+        let cacheKey = "\(ObjectIdentifier(image))_\(Int((aspectRatio * 1000.0).rounded()))" as NSString
         if let cached = Self.photoCache.object(forKey: cacheKey), cached.source === image {
             self.applyPhoto(cached, animated: self.photo.image != nil && self.window != nil)
             return
@@ -199,20 +211,26 @@ final class ConceptProfileBackdropView: UIView {
         Self.photoQueue.async { [weak self] in
             autoreleasepool {
                 guard let input = CIImage(image: image), input.extent.width.isFinite, input.extent.height.isFinite, input.extent.width > 0, input.extent.height > 0 else { return }
+                let cropSize = aspectRatio > input.extent.width / input.extent.height
+                    ? CGSize(width: input.extent.width, height: input.extent.width / aspectRatio)
+                    : CGSize(width: input.extent.height * aspectRatio, height: input.extent.height)
+                let crop = CGRect(x: input.extent.midX - cropSize.width * 0.5, y: input.extent.midY - cropSize.height * 0.5, width: cropSize.width, height: cropSize.height)
                 let targetDimension: CGFloat = 256.0
-                let scale = min(1.0, targetDimension / max(input.extent.width, input.extent.height))
-                let small = input.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+                let scale = min(1.0, targetDimension / max(crop.width, crop.height))
+                let small = input.cropped(to: crop).transformed(by: CGAffineTransform(scaleX: scale, y: scale))
                 let blurred = small.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 28.0]).cropped(to: small.extent)
                 guard let result = Self.imageContext.createCGImage(blurred, from: small.extent) else { return }
+                guard let bottomRow = result.cropping(to: CGRect(x: 0.0, y: CGFloat(result.height - 1), width: CGFloat(result.width), height: 1.0)) else { return }
                 var rgba = [UInt8](repeating: 0, count: 4)
-                let average = small.applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: CIVector(cgRect: small.extent)])
+                let bottomBand = CGRect(x: small.extent.minX, y: small.extent.minY, width: small.extent.width, height: max(1.0, small.extent.height * 0.12))
+                let average = blurred.applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: CIVector(cgRect: bottomBand)])
                 rgba.withUnsafeMutableBytes { bytes in
                     Self.imageContext.render(average, toBitmap: bytes.baseAddress!, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
                 }
                 let photoColor = UIColor(red: CGFloat(rgba[0]) / 255.0, green: CGFloat(rgba[1]) / 255.0, blue: CGFloat(rgba[2]) / 255.0, alpha: 1.0)
                 let luminance = Self.luminance(photoColor)
                 let output = UIImage(cgImage: result)
-                let prepared = PreparedPhoto(source: image, image: output, color: photoColor, luminance: luminance)
+                let prepared = PreparedPhoto(source: image, image: output, continuation: UIImage(cgImage: bottomRow), color: photoColor, luminance: luminance)
                 DispatchQueue.main.async { [weak self] in
                     Self.photoCache.setObject(prepared, forKey: cacheKey, cost: result.width * result.height * 4)
                     guard let self, self.photoGeneration == generation, self.sourcePhoto === image else { return }
@@ -225,15 +243,20 @@ final class ConceptProfileBackdropView: UIView {
     private func applyPhoto(_ prepared: PreparedPhoto, animated: Bool) {
         if self.photo.image == nil {
             self.photo.alpha = animated ? 0.0 : 1.0
+            self.continuation.alpha = self.photo.alpha
         } else if animated {
             let fade = CATransition()
             fade.type = .fade
             fade.duration = 0.22
             self.photo.layer.add(fade, forKey: "Concept.photoChange")
+            self.continuation.layer.add(fade, forKey: "Concept.photoChange")
         }
         self.photo.image = prepared.image
+        self.continuation.image = prepared.continuation
         let transition: ContainedViewLayoutTransition = animated ? .animated(duration: 0.22, curve: .easeInOut) : .immediate
+        transition.updateBackgroundColor(layer: self.photoContainer.layer, color: prepared.color)
         transition.updateAlpha(layer: self.photo.layer, alpha: 1.0)
+        transition.updateAlpha(layer: self.continuation.layer, alpha: 1.0)
         self.photoColor = prepared.color
         self.photoLuminance = prepared.luminance
         self.dominantColor = self.expanded || !self.hasCover ? prepared.color : (self.coverColor ?? prepared.color)
@@ -259,10 +282,10 @@ final class ConceptProfileBackdropView: UIView {
 
 }
 
-public func conceptProfileCardTintColor(dominantColor _: UIColor?, isDark _: Bool) -> UIColor {
+public func conceptProfileCardTintColor(dominantColor _: UIColor?, isDark: Bool) -> UIColor {
     // The backdrop already supplies its color through the blur. A neutral tint avoids
     // recoloring every card when the larger avatar finishes decoding.
-    return UIColor(white: 0.0, alpha: 0.04)
+    return isDark ? UIColor.white.withAlphaComponent(0.065) : UIColor.black.withAlphaComponent(0.055)
 }
 
 /// Only the profile's own surfaces use this palette. Menus, editing forms,

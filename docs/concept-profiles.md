@@ -33,16 +33,30 @@ recording is still needed to judge the new physical interaction and actual frame
 
 ## First-frame material and avatar readiness
 
-Information cards keep one explicit dark ultra-thin material from creation. Geometry updates do not
+Information cards reuse Display's tint-free `BlurredBackgroundView` from creation, without the dark
+fill of `systemUltraThinMaterialDark`. A separate 6.5% white tint in the dark theme or 5.5% black tint
+in the light theme keeps cards distinct without a dense panel or an image-dependent palette switch. Geometry updates do not
 reset its backdrop state. A separate opaque theme fill handles collapse; the blur's alpha stays one.
 Profile section entry avoids fading the material's ancestor. This follows [UIKit's effect alpha
-requirements](https://developer.apple.com/documentation/uikit/uivisualeffectview). The neutral 4% black
+requirements](https://developer.apple.com/documentation/uikit/uivisualeffectview). The neutral black
 card tint no longer waits for the photo's average color, so photo completion does not rebuild rows.
 
 The backdrop starts with the decoded round avatar while a gallery photo is unavailable. Blur is
 prepared off-main at a 256-pixel maximum edge and cached with a 4 MiB/12-entry limit, without retaining
 the source photos. A bounded thumbnail color provides the initial fill; arriving images and tone
-changes crossfade over 0.22 seconds. A separate 3.5% black shade gently dims the decorative backdrop.
+changes crossfade over 0.22 seconds. A separate 5.5% black shade gently dims the decorative backdrop;
+the full-screen shade and the card tint have independent roles and do not share an appearance switch.
+
+The prepared photo uses the same aspect-fill crop and on-screen frame as the expanded avatar.
+Only the blurred bottom edge continues below that frame; the entire avatar is no longer enlarged
+to fill the viewport. This keeps a centered sticker from coloring the whole profile and aligns
+the sharp-to-blur fade on photos with a distinct lower edge. Blur preparation remains bounded and
+off-main; crop aspect is part of its cache key.
+
+Cards animate a single outer rounded clip while keeping the blur's sampling area at the larger
+of the old/new heights. The sampling area settles after the clip animation. The track disables
+the whole-plate scale highlight, which invalidates live blur on press. Profile tabs use clear
+glass with a stable base appearance and no extra clipping of the glass's refractive edge.
 
 Before visual acceptance, record cold/warm profile opens, delayed gallery-image loading, avatar
 expansion, gift covers and scroll-to-theme in both themes. Expect no pale first card, abrupt material

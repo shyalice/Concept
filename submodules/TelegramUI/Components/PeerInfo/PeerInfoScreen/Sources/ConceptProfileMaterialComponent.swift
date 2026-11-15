@@ -12,7 +12,7 @@ final class ConceptProfileMaterialView: UIView {
         let isDark: Bool
         let reduceTransparency: Bool
     }
-    private let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterialDark))
+    private let blur = BlurredBackgroundView(color: nil)
     private let tint = UIView()
     private let solidBackground = UIView()
     let contentView = UIView()
@@ -22,6 +22,7 @@ final class ConceptProfileMaterialView: UIView {
         super.init(frame: frame)
         self.clipsToBounds = true
         self.layer.cornerCurve = .continuous
+        self.blur.updateColor(color: .clear, forceKeepBlur: true, transition: .immediate)
         self.blur.isUserInteractionEnabled = false
         self.tint.isUserInteractionEnabled = false
         self.solidBackground.isUserInteractionEnabled = false
@@ -45,7 +46,7 @@ final class ConceptProfileMaterialView: UIView {
         } else {
             transition.updateBackgroundColor(layer: self.tint.layer, color: tintColor)
             transition.updateBackgroundColor(layer: self.solidBackground.layer, color: targetColor)
-            // Cover the stable dark material with the actual application theme when collapsing.
+            // Cover the stable blur with the actual application theme when collapsing.
             // Fading the effect itself or swapping its appearance produces brightness flashes.
             transition.updateAlpha(layer: self.solidBackground.layer, alpha: appearance.fraction)
         }
@@ -59,6 +60,7 @@ final class ConceptProfileMaterialView: UIView {
         self.layer.cornerRadius = radius
         let bounds = CGRect(origin: .zero, size: size)
         transition.updateFrame(view: self.blur, frame: bounds)
+        self.blur.update(size: size, transition: transition)
         transition.updateFrame(view: self.tint, frame: bounds)
         transition.updateFrame(view: self.solidBackground, frame: bounds)
         transition.updateFrame(view: self.contentView, frame: bounds)

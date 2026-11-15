@@ -607,7 +607,7 @@ final class PeerInfoPaneContainerNode: ASDisplayNode, ASGestureRecognizerDelegat
     
     private let tabsBackgroundContainer: UIView
     private let tabsBackgroundView: GlassBackgroundView
-    var profileSurfaceColor: UIColor?
+    var profileSurface: (color: UIColor, isDark: Bool)?
     private let tabsContainer = ComponentView<Empty>()
     private var didJustReorderTabs = false
     
@@ -687,8 +687,6 @@ final class PeerInfoPaneContainerNode: ASDisplayNode, ASGestureRecognizerDelegat
         
         self.tabsBackgroundContainer = UIView()
         self.tabsBackgroundView = GlassBackgroundView()
-        self.tabsBackgroundView.clipsToBounds = true
-        self.tabsBackgroundView.layer.cornerCurve = .continuous
         
         self.headerContainer = SparseContainerView()
         
@@ -1432,7 +1430,8 @@ final class PeerInfoPaneContainerNode: ASDisplayNode, ASGestureRecognizerDelegat
 
         
         transition.updateFrame(view: self.tabsBackgroundView, frame: CGRect(origin: CGPoint(), size: tabContainerFrame.size))
-        self.tabsBackgroundView.update(size: tabContainerFrame.size, cornerRadius: tabContainerFrame.height * 0.5, isDark: presentationData.theme.overallDarkAppearance, tintColor: .init(kind: .panel), transition: ComponentTransition(transition))
+        let tabsTint: GlassBackgroundView.TintColor = self.profileSurface.map { .init(kind: .custom(style: .clear, color: $0.color)) } ?? .init(kind: .panel)
+        self.tabsBackgroundView.update(size: tabContainerFrame.size, cornerRadius: tabContainerFrame.height * 0.5, isDark: self.profileSurface?.isDark ?? presentationData.theme.overallDarkAppearance, tintColor: tabsTint, transition: ComponentTransition(transition))
         
         ComponentTransition(transition).setAlpha(view: self.tabsBackgroundContainer, alpha: tabsAlpha)
         
