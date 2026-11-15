@@ -2849,7 +2849,11 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                         action: { [weak self] in self?.displaySavedMusic?() }, animateAlpha: false,
                         animateScale: true, rasterizeOnScaleAnimation: false, accessibility: musicAccessibility))
                 }
-                let musicSize = music.update(transition: .immediate, component: musicComponent, environment: {},
+                // ComponentView retains its concrete root view. Keep that type stable when
+                // entering/leaving stock editing; replace the button through child identity.
+                let musicSize = music.update(transition: .immediate, component: AnyComponent(HStack([
+                    AnyComponentWithIdentity(id: usesProfileSurface ? "glass" : "plain", component: musicComponent)
+                ], spacing: 0.0)), environment: {},
                     containerSize: CGSize(width: musicBandWidth, height: musicHeight))
                 let musicFrame = CGRect(origin: CGPoint(x: usesProfileSurface ? stripLeft + floorToScreenPixels((musicBandWidth - musicSize.width) * 0.5) : stripLeft, y: apparentBackgroundHeight - musicHeight - (usesProfileSurface ? 8.0 : (hasBackground || self.isAvatarExpanded ? 0.0 : 4.0)) + 1.0 - UIScreenPixel), size: musicSize)
                 if let musicView = music.view {

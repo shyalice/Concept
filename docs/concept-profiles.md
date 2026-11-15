@@ -109,3 +109,14 @@ rosette roles retain their existing alignment. The accepted card material is unc
 
 The complete app compiled with this batch. Integrated account-switcher/profile frame captures and
 layout checks with long names remain outstanding; build success alone does not validate appearance.
+
+## My Profile → Edit crash
+
+The user's build23 crash UUID matches the archived TelegramUIFramework symbols. Symbolication points
+from `PeerInfoScreenNode.activateEdit` through `PeerInfoHeaderNode.update` at line 2852 to the forced
+view cast in `Component._update`. The music ComponentView had switched its root from
+GlassBarButtonComponent to PlainButtonComponent on entry to stock editing. Its root now remains
+HStack, with distinct child identities for glass and stock buttons, so entry and exit instantiate the
+correct concrete button view. Existing editing sections and `usesProfileSurface == false` continue
+using ordinary presentation data. Settings → Edit does not enter from a glass music root.
+The real My Profile → Edit → Cancel/Done transition still needs a device run after installing the fix.
